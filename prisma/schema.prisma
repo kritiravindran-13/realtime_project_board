@@ -1,0 +1,108 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  metadata    Json?
+
+  tasks      Task[]
+  taskEvents TaskEvent[]
+
+  @@index([name])
+}
+
+model Task {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  title  String
+  status String
+
+  assignedTo User[] @relation("TaskAssignees")
+
+  // Shape: { priority: number, description: string, tags: string[], customFields: object }
+  configuration Json?
+
+  dependencies Task[] @relation("TaskDependencies")
+  dependents   Task[] @relation("TaskDependencies")
+
+  comments Comment[]
+  events   TaskEvent[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model User {
+  id      String   @id @default(cuid())
+  author  String
+  created DateTime @default(now())
+
+  assignedTasks Task[]    @relation("TaskAssignees")
+  comments      Comment[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  content   String
+  timestamp DateTime @default(now())
+
+  @@index([taskId])
+  @@index([authorId])
+}
+
+model TaskEvent {
+  id String @id @default(cuid())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  type    TaskEventType
+  payload Json
+
+  version Int
+
+  actorId   String?
+  actorName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@index([projectId])
+  @@index([taskId, version])
+  @@index([projectId, createdAt])
+}
+
+enum TaskEventType {
+  CREATED
+  UPDATED
+  DELETED
+  STATUS_CHANGED
+  DEPENDENCIES_CHANGED
+  CONFIG_CHANGED
+  ASSIGNEES_CHANGED
+  COMMENT_ADDED
+  COMMENT_DELETED
+}
