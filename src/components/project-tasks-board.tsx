@@ -198,6 +198,7 @@ function statusLabel(s: string) {
 }
 
 export function ProjectTasksBoard() {
+  const queryClient = useQueryClient();
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjects,
@@ -205,10 +206,60 @@ export function ProjectTasksBoard() {
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [newProjectName, setNewProjectName] = useState("");
 
   const projectList = projectsQuery.data ?? [];
   const fallbackProjectId = projectList[0]?.id ?? null;
   const activeProjectId = projectId ?? fallbackProjectId;
+
+  const createProject = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j === "object" && j && "error" in j
+            ? String((j as { error: string }).error)
+            : `HTTP ${res.status}`,
+        );
+      }
+      return res.json() as Promise<{ id: string; name: string }>;
+    },
+    onSuccess: (project) => {
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setProjectId(project.id);
+      setSelectedTaskId(null);
+      setNewProjectName("");
+    },
+  });
+
+  const deleteProject = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 204) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j === "object" && j && "error" in j
+            ? String((j as { error: string }).error)
+            : `HTTP ${res.status}`,
+        );
+      }
+    },
+    onSuccess: async (_data, id) => {
+      setSelectedTaskId(null);
+      // Let fallbackProjectId pick the next project after refresh.
+      setProjectId(null);
+      setNewProjectName("");
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.removeQueries({ queryKey: ["tasks", id] });
+    },
+  });
 
   const {
     data: tasks,
@@ -242,6 +293,67 @@ export function ProjectTasksBoard() {
           <p className="text-xs text-zinc-500" aria-live="polite">
             {statusLabel(connectionStatus)}
           </p>
+
+          <div className="flex flex-col gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            <label
+              htmlFor="new-project"
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+            >
+              Create project
+            </label>
+            <div className="flex flex-col gap-2">
+              <input
+                id="new-project"
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="Project name"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                disabled={!newProjectName.trim() || createProject.isPending}
+                onClick={() => createProject.mutate(newProjectName.trim())}
+                className="w-full rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {createProject.isPending ? "Creating…" : "Add project"}
+              </button>
+            </div>
+            {createProject.isError ? (
+              <p className="text-xs text-red-600">{createProject.error.message}</p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Danger zone
+            </span>
+            <button
+              type="button"
+              disabled={!activeProjectId || deleteProject.isPending}
+              onClick={() => {
+                if (!activeProjectId) return;
+                const projName =
+                  projectList.find((p) => p.id === activeProjectId)?.name ??
+                  activeProjectId;
+                if (
+                  typeof window !== "undefined" &&
+                  !window.confirm(
+                    `Delete project \"${projName}\"? This will delete its tasks and comments.`,
+                  )
+                ) {
+                  return;
+                }
+                deleteProject.mutate(activeProjectId);
+              }}
+              className="w-full rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-40 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
+            >
+              {deleteProject.isPending ? "Deleting…" : "Delete project"}
+            </button>
+            {deleteProject.isError ? (
+              <p className="text-xs text-red-600">{deleteProject.error.message}</p>
+            ) : null}
+          </div>
         </aside>
 
         <div className="flex min-w-0 flex-col gap-8">
