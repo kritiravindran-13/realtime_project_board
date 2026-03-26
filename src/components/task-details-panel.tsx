@@ -131,6 +131,253 @@ function TaskDependenciesEditor({
   );
 }
 
+function TaskTitleEditor({
+  task,
+  projectId,
+}: {
+  task: ApiTaskDetail;
+  projectId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(task.title);
+
+  useEffect(() => {
+    setDraftTitle(task.title);
+    setIsEditing(false);
+  }, [task.id, task.title]);
+
+  const patchTitle = useMutation({
+    mutationFn: async (nextTitle: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j === "object" && j && "error" in j
+            ? String((j as { error: string }).error)
+            : `HTTP ${res.status}`,
+        );
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["task", task.id] });
+      void queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
+      setIsEditing(false);
+    },
+  });
+
+  return (
+    <div className="flex items-start justify-between gap-2">
+      {isEditing ? (
+        <form
+          className="flex w-full items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = draftTitle.trim();
+            if (!next || next === task.title || patchTitle.isPending) return;
+            patchTitle.mutate(next);
+          }}
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <label
+              htmlFor={`task-title-edit-${task.id}`}
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+            >
+              Title
+            </label>
+            <input
+              id={`task-title-edit-${task.id}`}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!draftTitle.trim() || draftTitle.trim() === task.title || patchTitle.isPending}
+            className="rounded-lg bg-zinc-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-40 dark:bg-zinc-200 dark:text-zinc-900"
+          >
+            {patchTitle.isPending ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            disabled={patchTitle.isPending}
+            className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200"
+            onClick={() => {
+              setDraftTitle(task.title);
+              setIsEditing(false);
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          <h2 className="text-lg font-semibold leading-snug">{task.title}</h2>
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            onClick={() => setIsEditing(true)}
+          >
+            Edit
+          </button>
+        </>
+      )}
+      {patchTitle.isError ? (
+        <p className="w-full text-xs text-red-600">{patchTitle.error.message}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskAuthorsEditor({
+  task,
+  projectId,
+}: {
+  task: ApiTaskDetail;
+  projectId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [authorsDraft, setAuthorsDraft] = useState<string[]>(
+    () => task.assignedTo.map((u) => u.author),
+  );
+  const [addInput, setAddInput] = useState("");
+
+  useEffect(() => {
+    setAuthorsDraft(task.assignedTo.map((u) => u.author));
+    setAddInput("");
+  }, [task.id]);
+
+  const normalize = (names: string[]) =>
+    Array.from(new Set(names.map((s) => s.trim()).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b),
+    );
+
+  const currentNormalized = useMemo(() => normalize(task.assignedTo.map((u) => u.author)), [task]);
+  const draftNormalized = useMemo(() => normalize(authorsDraft), [authorsDraft]);
+
+  const parseNewAuthors = (input: string) =>
+    input
+      .split(/[,\n;]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const patchAuthors = useMutation({
+    mutationFn: async (authors: string[]) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authors }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j === "object" && j && "error" in j
+            ? String((j as { error: string }).error)
+            : `HTTP ${res.status}`,
+        );
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["task", task.id] });
+      void queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
+      setAddInput("");
+    },
+  });
+
+  const hasChanges = draftNormalized.join("|") !== currentNormalized.join("|");
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Authors</h3>
+
+      <div className="flex flex-wrap gap-1">
+        {authorsDraft.length === 0 ? (
+          <span className="text-xs text-zinc-500">No authors assigned.</span>
+        ) : (
+          authorsDraft.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+              onClick={() => setAuthorsDraft((prev) => prev.filter((n) => n !== name))}
+              aria-label={`Remove author ${name}`}
+              title="Remove author"
+            >
+              <span className="max-w-[120px] truncate">{name}</span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-3 w-3"
+                aria-hidden={true}
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <label
+            htmlFor={`task-authors-add-${task.id}`}
+            className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+          >
+            Add authors
+          </label>
+          <input
+            id={`task-authors-add-${task.id}`}
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            value={addInput}
+            onChange={(e) => setAddInput(e.target.value)}
+            placeholder="e.g. Jane Doe, John Smith"
+            autoComplete="off"
+          />
+        </div>
+        <button
+          type="button"
+          disabled={!addInput.trim()}
+          className="rounded-lg bg-zinc-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-40 dark:bg-zinc-200 dark:text-zinc-900"
+          onClick={() => {
+            const next = parseNewAuthors(addInput);
+            if (next.length === 0) return;
+            setAuthorsDraft((prev) => normalize([...prev, ...next]));
+            setAddInput("");
+          }}
+        >
+          Add
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          disabled={!hasChanges || patchAuthors.isPending}
+          className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+          onClick={() => patchAuthors.mutate(authorsDraft)}
+        >
+          {patchAuthors.isPending ? "Saving…" : "Save authors"}
+        </button>
+        {patchAuthors.isError ? (
+          <p className="text-xs text-red-600">{patchAuthors.error.message}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function TaskStatusSection({
   task,
   projectId,
@@ -375,15 +622,8 @@ export function TaskDetailsPanel({
 
   return (
     <div className="flex flex-col gap-5 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div>
-        <h2 className="text-lg font-semibold leading-snug">{task.title}</h2>
-        {task.assignedTo && task.assignedTo.length > 0 ? (
-          <p className="mt-1 text-xs text-zinc-500">
-            Assigned:{" "}
-            {task.assignedTo.map((u) => u.author).join(", ")}
-          </p>
-        ) : null}
-      </div>
+      <TaskTitleEditor task={task} projectId={projectId} />
+      <TaskAuthorsEditor task={task} projectId={projectId} />
 
       <TaskStatusSection
         task={task}

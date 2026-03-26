@@ -6,6 +6,8 @@ type CreateTaskBody = {
   projectId?: unknown;
   title?: unknown;
   status?: unknown;
+  /** Resolve or create Users by display name, then assign the task to them. */
+  authors?: unknown;
   /** User IDs to assign (many-to-many). Legacy alias: `assignedTo` as string[]. */
   assigneeIds?: unknown;
   assignedTo?: unknown;
@@ -17,6 +19,40 @@ function parseAssigneeIds(body: CreateTaskBody): string[] {
   const raw = body.assigneeIds ?? body.assignedTo;
   if (!Array.isArray(raw)) return [];
   return raw.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+}
+
+function parseAuthorsDisplayNames(body: CreateTaskBody): string[] {
+  const rawAuthors = body.authors;
+  if (Array.isArray(rawAuthors)) {
+    return rawAuthors
+      .filter((a): a is string => typeof a === "string")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof rawAuthors === "string") {
+    return rawAuthors
+      .split(/[,\n;]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+async function resolveAuthorsDisplayNamesToUserIds(names: string[]): Promise<string[]> {
+  const uniqueNames = Array.from(new Set(names));
+  const userIds: string[] = [];
+  for (const name of uniqueNames) {
+    const existing = await prisma.user.findFirst({ where: { author: name } });
+    const user =
+      existing ??
+      (await prisma.user.create({
+        data: { author: name },
+      }));
+    userIds.push(user.id);
+  }
+  return userIds;
 }
 
 export async function GET(request: Request) {
@@ -76,16 +112,19 @@ export async function POST(request: Request) {
       : [];
 
     const assigneeIds = parseAssigneeIds(body);
+    const authorsDisplayNames = parseAuthorsDisplayNames(body);
+    const authorsUserIds = await resolveAuthorsDisplayNamesToUserIds(authorsDisplayNames);
+    const finalAssigneeIds = Array.from(new Set([...assigneeIds, ...authorsUserIds]));
 
     const created = await prisma.task.create({
       data: {
         projectId: body.projectId.trim(),
         title: body.title.trim(),
         status: body.status.trim(),
-        ...(assigneeIds.length > 0
+        ...(finalAssigneeIds.length > 0
           ? {
               assignedTo: {
-                connect: assigneeIds.map((id) => ({ id })),
+                connect: finalAssigneeIds.map((id) => ({ id })),
               },
             }
           : {}),

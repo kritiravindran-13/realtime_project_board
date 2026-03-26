@@ -5,6 +5,8 @@ import { prisma } from "../../../../../lib/server/prisma";
 type UpdateTaskBody = {
   title?: unknown;
   status?: unknown;
+  /** Resolve or create Users by display name, then set `assignedTo`. */
+  authors?: unknown;
   assigneeIds?: unknown;
   assignedTo?: unknown;
   configuration?: unknown;
@@ -21,6 +23,46 @@ function parseAssigneeIdsForUpdate(body: UpdateTaskBody): string[] | null | unde
     return body.assignedTo.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
   }
   return undefined;
+}
+
+function parseAuthorsDisplayNamesForUpdate(body: UpdateTaskBody): string[] | null | undefined {
+  if (body.authors === undefined) return undefined;
+  if (body.authors === null) return null;
+
+  const raw = body.authors;
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((a): a is string => typeof a === "string")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  // Allow simple string input (comma/newline separated), even though UI sends string[].
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,\n;]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  return undefined;
+}
+
+async function resolveAuthorsDisplayNamesToUserIds(
+  names: string[],
+): Promise<string[]> {
+  const uniqueNames = Array.from(new Set(names));
+  const userIds: string[] = [];
+  for (const name of uniqueNames) {
+    const existing = await prisma.user.findFirst({ where: { author: name } });
+    const user =
+      existing ??
+      (await prisma.user.create({
+        data: { author: name },
+      }));
+    userIds.push(user.id);
+  }
+  return userIds;
 }
 
 export async function GET(
@@ -76,23 +118,48 @@ export async function PATCH(
       );
     }
 
+    const authorsProvided = body.authors !== undefined;
+    const authorsDisplayNames = parseAuthorsDisplayNamesForUpdate(body);
     const assigneeIds = parseAssigneeIdsForUpdate(body);
+
+    if (authorsProvided && authorsDisplayNames === undefined) {
+      return Response.json(
+        {
+          error:
+            "Field `authors` must be a string array (or comma/newline separated string) when provided.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const resolvedAuthorIds =
+      authorsProvided && authorsDisplayNames !== undefined && authorsDisplayNames !== null
+        ? await resolveAuthorsDisplayNamesToUserIds(authorsDisplayNames)
+        : authorsProvided && authorsDisplayNames === null
+          ? []
+          : undefined;
 
     const updated = await prisma.task.update({
       where: { id },
       data: {
         ...(body.title !== undefined ? { title: body.title.trim() } : {}),
         ...(body.status !== undefined ? { status: body.status.trim() } : {}),
-        ...(assigneeIds !== undefined
+        ...(authorsProvided
           ? {
               assignedTo: {
-                set:
-                  assigneeIds === null
-                    ? []
-                    : assigneeIds.map((aid) => ({ id: aid })),
+                set: resolvedAuthorIds?.map((aid) => ({ id: aid })) ?? [],
               },
             }
-          : {}),
+          : assigneeIds !== undefined
+            ? {
+                assignedTo: {
+                  set:
+                    assigneeIds === null
+                      ? []
+                      : assigneeIds.map((aid) => ({ id: aid })),
+                },
+              }
+            : {}),
         ...(body.configuration !== undefined
           ? {
               configuration:

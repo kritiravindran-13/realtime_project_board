@@ -20,6 +20,14 @@ const CREATE_TASK_STATUS_PRESETS = [
   "completed",
 ] as const;
 
+function parseAuthorsInput(input: string): string[] {
+  const parts = input
+    .split(/[,\n;]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return Array.from(new Set(parts));
+}
+
 function NewTaskDraftSection({
   activeProjectId,
 }: {
@@ -36,12 +44,14 @@ function NewTaskDraftSection({
     canRedo,
   } = useUndoRedo("");
   const [newTaskStatus, setNewTaskStatus] = useState("todo");
+  const [newTaskAuthors, setNewTaskAuthors] = useState("");
 
   const createTask = useMutation({
     mutationFn: async (payload: {
       projectId: string;
       title: string;
       status: string;
+      authors?: string[];
     }) => {
       const res = await fetch("/api/tasks", {
         method: "POST",
@@ -50,6 +60,9 @@ function NewTaskDraftSection({
           projectId: payload.projectId,
           title: payload.title,
           status: payload.status,
+          ...(payload.authors && payload.authors.length > 0
+            ? { authors: payload.authors }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -66,6 +79,7 @@ function NewTaskDraftSection({
       void queryClient.invalidateQueries({ queryKey: ["tasks", variables.projectId] });
       replaceTitle("");
       setNewTaskStatus("todo");
+      setNewTaskAuthors("");
     },
   });
 
@@ -73,11 +87,13 @@ function NewTaskDraftSection({
     e.preventDefault();
     const title = draftTitle.trim();
     const status = newTaskStatus.trim();
+    const authors = parseAuthorsInput(newTaskAuthors);
     if (!title || !status || !activeProjectId) return;
     createTask.mutate({
       projectId: activeProjectId,
       title,
       status,
+      authors: authors.length > 0 ? authors : undefined,
     });
   };
 
@@ -144,21 +160,36 @@ function NewTaskDraftSection({
           >
             Status
           </label>
-          <input
+          <select
             id="task-status"
             name="status"
-            list="task-status-presets"
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
             value={newTaskStatus}
             onChange={(e) => setNewTaskStatus(e.target.value)}
-            placeholder="e.g. todo"
+            aria-label="Task status"
+          >
+            {CREATE_TASK_STATUS_PRESETS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex w-full flex-col gap-1 sm:w-44">
+          <label
+            htmlFor="task-authors"
+            className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+          >
+            Authors
+          </label>
+          <input
+            id="task-authors"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            value={newTaskAuthors}
+            onChange={(e) => setNewTaskAuthors(e.target.value)}
+            placeholder="e.g. Jane Doe, John Smith"
             autoComplete="off"
           />
-          <datalist id="task-status-presets">
-            {CREATE_TASK_STATUS_PRESETS.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
         </div>
         <button
           type="submit"
