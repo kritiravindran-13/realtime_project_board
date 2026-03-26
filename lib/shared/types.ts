@@ -150,11 +150,17 @@ export type TaskRealtimeEvent =
   | { type: "task.dependenciesChanged"; taskId: ID; dependencyIds: ID[] };
 
 /** Comment-side realtime payload (nested under {@link RealtimeMessage}). */
-export type CommentRealtimeEvent = {
-  type: "comment.created";
-  taskId: ID;
-  comment: unknown;
-};
+export type CommentRealtimeEvent =
+  | {
+      type: "comment.created";
+      taskId: ID;
+      comment: unknown;
+    }
+  | {
+      type: "comment.deleted";
+      taskId: ID;
+      commentId: ID;
+    };
 
 /** Project-side realtime payload (nested under {@link RealtimeMessage}). */
 export type ProjectRealtimeEvent =

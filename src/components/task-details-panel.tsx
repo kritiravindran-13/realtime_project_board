@@ -229,6 +229,63 @@ function TaskStatusSection({
   );
 }
 
+function TaskDeleteSection({
+  taskId,
+  projectId,
+  title,
+}: {
+  taskId: string;
+  projectId: string;
+  title: string;
+}) {
+  const queryClient = useQueryClient();
+
+  const deleteTask = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 204) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j === "object" && j && "error" in j
+            ? String((j as { error: string }).error)
+            : `HTTP ${res.status}`,
+        );
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
+      void queryClient.removeQueries({ queryKey: ["task", taskId] });
+      void queryClient.removeQueries({ queryKey: ["comments", taskId] });
+    },
+  });
+
+  return (
+    <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+      <button
+        type="button"
+        className="w-full rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-950/60"
+        disabled={deleteTask.isPending}
+        onClick={() => {
+          if (
+            typeof window !== "undefined" &&
+            !window.confirm(`Delete task "${title}"? This cannot be undone.`)
+          ) {
+            return;
+          }
+          deleteTask.mutate();
+        }}
+      >
+        {deleteTask.isPending ? "Deleting…" : "Delete task"}
+      </button>
+      {deleteTask.isError ? (
+        <p className="mt-2 text-xs text-red-600">{deleteTask.error.message}</p>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Loads a task via `GET /api/tasks/[id]`, keeps it fresh with project realtime, and hosts
  * dependency editing (`PUT /api/tasks/[id]/dependencies`) plus {@link CommentList}.
@@ -317,6 +374,12 @@ export function TaskDetailsPanel({
         task={task}
         projectId={projectId}
         candidates={candidates}
+      />
+
+      <TaskDeleteSection
+        taskId={task.id}
+        projectId={projectId}
+        title={task.title}
       />
 
       <CommentList taskId={taskId} projectId={projectId} />

@@ -1,7 +1,8 @@
 "use client";
 
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ApiTask } from "@/hooks/use-project-tasks";
 import { useProjectTasks } from "@/hooks/use-project-tasks";
 
@@ -15,6 +16,9 @@ const PREFERRED_STATUS_ORDER = [
   "done",
   "completed",
 ];
+
+/** Above this count per status column, task cards are virtualized for scroll performance. */
+export const COLUMN_VIRTUALIZE_THRESHOLD = 50;
 
 function compareStatusColumns(a: string, b: string): number {
   const la = a.toLowerCase();
@@ -41,6 +45,105 @@ function groupTasksByStatus(tasks: ApiTask[]): Map<string, ApiTask[]> {
   return map;
 }
 
+function TaskCard({
+  task,
+  selected,
+  onToggleSelect,
+}: {
+  task: ApiTask;
+  selected: boolean;
+  onToggleSelect: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", task.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onClick={onToggleSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggleSelect();
+        }
+      }}
+      className={`w-full cursor-grab rounded-lg border px-3 py-2 text-left text-sm outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+        selected
+          ? "border-zinc-900 bg-white ring-2 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-950 dark:ring-zinc-100"
+          : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-zinc-600"
+      }`}
+    >
+      <span className="line-clamp-2 font-medium">{task.title}</span>
+      {task.dependencies && task.dependencies.length > 0 ? (
+        <span className="mt-1 block text-[10px] text-zinc-500">
+          {task.dependencies.length} dependenc
+          {task.dependencies.length === 1 ? "y" : "ies"}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function VirtualizedTaskColumn({
+  columnTasks,
+  selectedTaskId,
+  onSelectTask,
+}: {
+  columnTasks: ApiTask[];
+  selectedTaskId: string | null;
+  onSelectTask: (taskId: string | null) => void;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // TanStack Virtual’s API is intentionally incompatible with React Compiler memoization here.
+  // eslint-disable-next-line react-hooks/incompatible-library -- windowed list only
+  const virtualizer = useVirtualizer({
+    count: columnTasks.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 88,
+    overscan: 8,
+  });
+
+  return (
+    <div
+      ref={parentRef}
+      className="min-h-[120px] max-h-[min(70vh,520px)] overflow-y-auto overscroll-y-contain p-2"
+    >
+      <div
+        className="relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
+        {virtualizer.getVirtualItems().map((v) => {
+          const task = columnTasks[v.index];
+          if (!task) return null;
+          return (
+            <div
+              key={task.id}
+              data-index={v.index}
+              ref={virtualizer.measureElement}
+              className="absolute left-0 top-0 w-full pb-2"
+              style={{ transform: `translateY(${v.start}px)` }}
+            >
+              <TaskCard
+                task={task}
+                selected={selectedTaskId === task.id}
+                onToggleSelect={() =>
+                  onSelectTask(
+                    selectedTaskId === task.id ? null : task.id,
+                  )
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type TaskBoardProps = {
   projectId: string | null;
   selectedTaskId: string | null;
@@ -49,7 +152,8 @@ type TaskBoardProps = {
 
 /**
  * Kanban-style columns by status, backed by `useProjectTasks`. Drag a card onto another column to
- * `PATCH /api/tasks/[id]/status`.
+ * `PATCH /api/tasks/[id]/status`. Columns with more than {@link COLUMN_VIRTUALIZE_THRESHOLD} tasks
+ * use windowed rendering so long lists stay scrollable and fast.
  */
 export function TaskBoard({
   projectId,
@@ -165,69 +269,56 @@ export function TaskBoard({
         <p className="text-sm text-zinc-500">No tasks yet. Create one above.</p>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {columns.map((status) => (
-            <div
-              key={status}
-              className="flex w-56 shrink-0 flex-col rounded-xl border border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-900/40"
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                const taskId = e.dataTransfer.getData("text/plain");
-                if (taskId) onDropOnStatus(taskId, status);
-              }}
-            >
-              <div className="border-b border-zinc-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-                {status}
-                <span className="ml-1 font-normal text-zinc-400">
-                  ({map.get(status)?.length ?? 0})
-                </span>
+          {columns.map((status) => {
+            const columnTasks = map.get(status) ?? [];
+            const virtualized = columnTasks.length > COLUMN_VIRTUALIZE_THRESHOLD;
+
+            return (
+              <div
+                key={status}
+                className="flex w-56 shrink-0 flex-col rounded-xl border border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-900/40"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const taskId = e.dataTransfer.getData("text/plain");
+                  if (taskId) onDropOnStatus(taskId, status);
+                }}
+              >
+                <div className="border-b border-zinc-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                  {status}
+                  <span className="ml-1 font-normal text-zinc-400">
+                    ({columnTasks.length})
+                  </span>
+                </div>
+                {virtualized ? (
+                  <VirtualizedTaskColumn
+                    columnTasks={columnTasks}
+                    selectedTaskId={selectedTaskId}
+                    onSelectTask={onSelectTask}
+                  />
+                ) : (
+                  <ul className="flex min-h-[120px] flex-col gap-2 p-2">
+                    {columnTasks.map((task) => (
+                      <li key={task.id}>
+                        <TaskCard
+                          task={task}
+                          selected={selectedTaskId === task.id}
+                          onToggleSelect={() =>
+                            onSelectTask(
+                              selectedTaskId === task.id ? null : task.id,
+                            )
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <ul className="flex min-h-[120px] flex-col gap-2 p-2">
-                {(map.get(status) ?? []).map((task) => (
-                  <li key={task.id}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/plain", task.id);
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      onClick={() =>
-                        onSelectTask(
-                          selectedTaskId === task.id ? null : task.id,
-                        )
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelectTask(
-                            selectedTaskId === task.id ? null : task.id,
-                          );
-                        }
-                      }}
-                      className={`w-full cursor-grab rounded-lg border px-3 py-2 text-left text-sm outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-zinc-400 ${
-                        selectedTaskId === task.id
-                          ? "border-zinc-900 bg-white ring-2 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-950 dark:ring-zinc-100"
-                          : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-zinc-600"
-                      }`}
-                    >
-                      <span className="line-clamp-2 font-medium">{task.title}</span>
-                      {task.dependencies && task.dependencies.length > 0 ? (
-                        <span className="mt-1 block text-[10px] text-zinc-500">
-                          {task.dependencies.length} dependenc
-                          {task.dependencies.length === 1 ? "y" : "ies"}
-                        </span>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

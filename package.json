@@ -12,11 +12,13 @@
     "test:broadcast": "tsx scripts/test-project-broadcast.ts",
     "test:realtime": "tsx scripts/test-realtime.ts",
     "test:realtime:synthetic": "tsx scripts/test-realtime-synthetic.ts",
-    "db:dedupe-projects": "tsx scripts/dedupe-project-names.ts"
+    "db:dedupe-projects": "tsx scripts/dedupe-project-names.ts",
+    "db:seed-tasks": "tsx scripts/seed-tasks-bulk.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
     "@tanstack/react-query": "^5.95.2",
+    "@tanstack/react-virtual": "^3.13.23",
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",

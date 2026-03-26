@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useProjectTasks } from "@/hooks/use-project-tasks";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import { fetchProjects, ProjectList } from "./project-list";
@@ -20,64 +20,22 @@ const CREATE_TASK_STATUS_PRESETS = [
   "completed",
 ] as const;
 
-function statusLabel(s: string) {
-  switch (s) {
-    case "idle":
-      return "Realtime: idle";
-    case "connecting":
-      return "Realtime: connecting…";
-    case "open":
-      return "Realtime: connected";
-    case "closed":
-      return "Realtime: disconnected";
-    case "error":
-      return "Realtime: error";
-    default:
-      return "Realtime: —";
-  }
-}
-
-export function ProjectTasksBoard() {
+function NewTaskDraftSection({
+  activeProjectId,
+}: {
+  activeProjectId: string | null;
+}) {
   const queryClient = useQueryClient();
-  const projectsQuery = useQuery({
-    queryKey: ["projects"],
-    queryFn: fetchProjects,
-  });
-
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-
-  const projectList = projectsQuery.data ?? [];
-  const fallbackProjectId = projectList[0]?.id ?? null;
-  const activeProjectId = projectId ?? fallbackProjectId;
-
-  const {
-    data: tasks,
-    connectionStatus,
-  } = useProjectTasks(activeProjectId);
-
-  const effectiveSelectedTaskId = useMemo(() => {
-    if (selectedTaskId == null || !tasks?.length) return null;
-    return tasks.some((t) => t.id === selectedTaskId) ? selectedTaskId : null;
-  }, [selectedTaskId, tasks]);
-
   const {
     present: draftTitle,
     push: pushTitle,
     replace: replaceTitle,
     undo,
     redo,
-    reset: resetTitleHistory,
     canUndo,
     canRedo,
   } = useUndoRedo("");
-
   const [newTaskStatus, setNewTaskStatus] = useState("todo");
-
-  useEffect(() => {
-    resetTitleHistory("");
-    setNewTaskStatus("todo");
-  }, [activeProjectId, resetTitleHistory]);
 
   const createTask = useMutation({
     mutationFn: async (payload: {
@@ -111,20 +69,156 @@ export function ProjectTasksBoard() {
     },
   });
 
-  const onCreate = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      const title = draftTitle.trim();
-      const status = newTaskStatus.trim();
-      if (!title || !status || !activeProjectId) return;
-      createTask.mutate({
-        projectId: activeProjectId,
-        title,
-        status,
-      });
-    },
-    [createTask, draftTitle, newTaskStatus, activeProjectId],
+  const onCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = draftTitle.trim();
+    const status = newTaskStatus.trim();
+    if (!title || !status || !activeProjectId) return;
+    createTask.mutate({
+      projectId: activeProjectId,
+      title,
+      status,
+    });
+  };
+
+  return (
+    <section className="flex flex-col gap-4 rounded-xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+        New task (undo/redo draft)
+      </h2>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+          onClick={() => pushTitle("Design API")}
+        >
+          Preset: Design API
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+          onClick={() => pushTitle("Wire up UI")}
+        >
+          Preset: Wire up UI
+        </button>
+        <button
+          type="button"
+          disabled={!canUndo}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900"
+          onClick={undo}
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          disabled={!canRedo}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900"
+          onClick={redo}
+        >
+          Redo
+        </button>
+      </div>
+      <form
+        onSubmit={onCreate}
+        className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <label
+            htmlFor="task-title"
+            className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+          >
+            Title
+          </label>
+          <input
+            id="task-title"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            value={draftTitle}
+            onChange={(e) => replaceTitle(e.target.value)}
+            placeholder="Task title"
+          />
+        </div>
+        <div className="flex w-full flex-col gap-1 sm:w-44">
+          <label
+            htmlFor="task-status"
+            className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+          >
+            Status
+          </label>
+          <input
+            id="task-status"
+            name="status"
+            list="task-status-presets"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            value={newTaskStatus}
+            onChange={(e) => setNewTaskStatus(e.target.value)}
+            placeholder="e.g. todo"
+            autoComplete="off"
+          />
+          <datalist id="task-status-presets">
+            {CREATE_TASK_STATUS_PRESETS.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
+        </div>
+        <button
+          type="submit"
+          disabled={
+            !activeProjectId ||
+            !draftTitle.trim() ||
+            !newTaskStatus.trim() ||
+            createTask.isPending
+          }
+          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+        >
+          {createTask.isPending ? "Creating…" : "Create task"}
+        </button>
+      </form>
+      {createTask.isError ? (
+        <p className="text-sm text-red-600">{createTask.error.message}</p>
+      ) : null}
+    </section>
   );
+}
+
+function statusLabel(s: string) {
+  switch (s) {
+    case "idle":
+      return "Realtime: idle";
+    case "connecting":
+      return "Realtime: connecting…";
+    case "open":
+      return "Realtime: connected";
+    case "closed":
+      return "Realtime: disconnected";
+    case "error":
+      return "Realtime: error";
+    default:
+      return "Realtime: —";
+  }
+}
+
+export function ProjectTasksBoard() {
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: fetchProjects,
+  });
+
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  const projectList = projectsQuery.data ?? [];
+  const fallbackProjectId = projectList[0]?.id ?? null;
+  const activeProjectId = projectId ?? fallbackProjectId;
+
+  const {
+    data: tasks,
+    connectionStatus,
+  } = useProjectTasks(activeProjectId);
+
+  const effectiveSelectedTaskId = useMemo(() => {
+    if (selectedTaskId == null || !tasks?.length) return null;
+    return tasks.some((t) => t.id === selectedTaskId) ? selectedTaskId : null;
+  }, [selectedTaskId, tasks]);
 
   return (
     <div className="mx-auto flex min-h-full max-w-7xl flex-col gap-8 px-4 py-10 font-sans text-zinc-900 dark:text-zinc-100">
@@ -151,101 +245,10 @@ export function ProjectTasksBoard() {
         </aside>
 
         <div className="flex min-w-0 flex-col gap-8">
-          <section className="flex flex-col gap-4 rounded-xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-              New task (undo/redo draft)
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
-                onClick={() => pushTitle("Design API")}
-              >
-                Preset: Design API
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
-                onClick={() => pushTitle("Wire up UI")}
-              >
-                Preset: Wire up UI
-              </button>
-              <button
-                type="button"
-                disabled={!canUndo}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900"
-                onClick={undo}
-              >
-                Undo
-              </button>
-              <button
-                type="button"
-                disabled={!canRedo}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900"
-                onClick={redo}
-              >
-                Redo
-              </button>
-            </div>
-            <form
-              onSubmit={onCreate}
-              className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end"
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <label
-                  htmlFor="task-title"
-                  className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
-                >
-                  Title
-                </label>
-                <input
-                  id="task-title"
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                  value={draftTitle}
-                  onChange={(e) => replaceTitle(e.target.value)}
-                  placeholder="Task title"
-                />
-              </div>
-              <div className="flex w-full flex-col gap-1 sm:w-44">
-                <label
-                  htmlFor="task-status"
-                  className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
-                >
-                  Status
-                </label>
-                <input
-                  id="task-status"
-                  name="status"
-                  list="task-status-presets"
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                  value={newTaskStatus}
-                  onChange={(e) => setNewTaskStatus(e.target.value)}
-                  placeholder="e.g. todo"
-                  autoComplete="off"
-                />
-                <datalist id="task-status-presets">
-                  {CREATE_TASK_STATUS_PRESETS.map((s) => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
-              </div>
-              <button
-                type="submit"
-                disabled={
-                  !activeProjectId ||
-                  !draftTitle.trim() ||
-                  !newTaskStatus.trim() ||
-                  createTask.isPending
-                }
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
-              >
-                {createTask.isPending ? "Creating…" : "Create task"}
-              </button>
-            </form>
-            {createTask.isError ? (
-              <p className="text-sm text-red-600">{createTask.error.message}</p>
-            ) : null}
-          </section>
+          <NewTaskDraftSection
+            key={activeProjectId ?? "none"}
+            activeProjectId={activeProjectId}
+          />
 
           <TaskBoard
             projectId={activeProjectId}
