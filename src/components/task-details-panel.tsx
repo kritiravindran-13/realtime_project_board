@@ -1,12 +1,30 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ApiTask } from "@/hooks/use-project-tasks";
 import type { ApiTaskDetail } from "@/hooks/use-task-detail";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useTaskDetail } from "@/hooks/use-task-detail";
 import { CommentList } from "./comment-list";
+
+const STATUS_PRESETS = [
+  "todo",
+  "in_progress",
+  "in progress",
+  "doing",
+  "blocked",
+  "review",
+  "done",
+  "completed",
+] as const;
+
+function statusOptionsForProject(tasks: ApiTask[], current: string): string[] {
+  const set = new Set<string>(STATUS_PRESETS);
+  for (const t of tasks) set.add(t.status);
+  set.add(current);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
 
 type TaskDetailsPanelProps = {
   taskId: string | null;
@@ -92,6 +110,125 @@ function TaskDependenciesEditor({
   );
 }
 
+function TaskStatusSection({
+  task,
+  projectId,
+  projectTasks,
+}: {
+  task: ApiTaskDetail;
+  projectId: string;
+  projectTasks: ApiTask[];
+}) {
+  const queryClient = useQueryClient();
+  const [customDraft, setCustomDraft] = useState("");
+
+  const options = useMemo(
+    () => statusOptionsForProject(projectTasks, task.status),
+    [projectTasks, task.status],
+  );
+
+  const patchStatus = useMutation({
+    mutationFn: async (status: string) => {
+      const res = await fetch(
+        `/api/tasks/${encodeURIComponent(task.id)}/status`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        },
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof j === "object" && j && "error" in j
+            ? String((j as { error: string }).error)
+            : `HTTP ${res.status}`,
+        );
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["task", task.id] });
+      void queryClient.invalidateQueries({ queryKey: ["tasks", projectId] });
+      setCustomDraft("");
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        Status
+      </h3>
+      <select
+        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+        aria-label="Task status"
+        value={task.status}
+        disabled={patchStatus.isPending}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next && next !== task.status) {
+            patchStatus.mutate(next);
+          }
+        }}
+      >
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+      <form
+        className="flex flex-col gap-2 sm:flex-row sm:items-end"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const s = customDraft.trim();
+          if (!s || s === task.status) return;
+          patchStatus.mutate(s);
+        }}
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <label
+            htmlFor={`task-status-custom-${task.id}`}
+            className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+          >
+            Custom status
+          </label>
+          <input
+            id={`task-status-custom-${task.id}`}
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            value={customDraft}
+            onChange={(e) => setCustomDraft(e.target.value)}
+            placeholder="e.g. in_qa"
+            list={`task-detail-status-suggestions-${task.id}`}
+          />
+          <datalist id={`task-detail-status-suggestions-${task.id}`}>
+            {options.map((opt) => (
+              <option key={opt} value={opt} />
+            ))}
+          </datalist>
+        </div>
+        <button
+          type="submit"
+          disabled={
+            !customDraft.trim() ||
+            customDraft.trim() === task.status ||
+            patchStatus.isPending
+          }
+          className="rounded-lg bg-zinc-800 px-3 py-2 text-xs font-medium text-white disabled:opacity-40 dark:bg-zinc-200 dark:text-zinc-900"
+        >
+          Apply
+        </button>
+      </form>
+      {patchStatus.isError ? (
+        <p className="text-xs text-red-600">{patchStatus.error.message}</p>
+      ) : null}
+      {patchStatus.isPending ? (
+        <p className="text-xs text-zinc-500">Updating status…</p>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Loads a task via `GET /api/tasks/[id]`, keeps it fresh with project realtime, and hosts
  * dependency editing (`PUT /api/tasks/[id]/dependencies`) plus {@link CommentList}.
@@ -161,9 +298,6 @@ export function TaskDetailsPanel({
     <div className="flex flex-col gap-5 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div>
         <h2 className="text-lg font-semibold leading-snug">{task.title}</h2>
-        <p className="mt-1 text-xs text-zinc-500">
-          Status: <span className="font-medium text-zinc-700 dark:text-zinc-300">{task.status}</span>
-        </p>
         {task.assignedTo && task.assignedTo.length > 0 ? (
           <p className="mt-1 text-xs text-zinc-500">
             Assigned:{" "}
@@ -171,6 +305,12 @@ export function TaskDetailsPanel({
           </p>
         ) : null}
       </div>
+
+      <TaskStatusSection
+        task={task}
+        projectId={projectId}
+        projectTasks={projectTasks}
+      />
 
       <TaskDependenciesEditor
         key={`${task.id}-${depKey}`}

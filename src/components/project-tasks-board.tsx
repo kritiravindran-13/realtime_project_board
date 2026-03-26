@@ -8,6 +8,18 @@ import { fetchProjects, ProjectList } from "./project-list";
 import { TaskBoard } from "./task-board";
 import { TaskDetailsPanel } from "./task-details-panel";
 
+/** Suggestions for new tasks; any non-empty string is allowed by the API. */
+const CREATE_TASK_STATUS_PRESETS = [
+  "todo",
+  "in_progress",
+  "in progress",
+  "doing",
+  "blocked",
+  "review",
+  "done",
+  "completed",
+] as const;
+
 function statusLabel(s: string) {
   switch (s) {
     case "idle":
@@ -60,8 +72,11 @@ export function ProjectTasksBoard() {
     canRedo,
   } = useUndoRedo("");
 
+  const [newTaskStatus, setNewTaskStatus] = useState("todo");
+
   useEffect(() => {
     resetTitleHistory("");
+    setNewTaskStatus("todo");
   }, [activeProjectId, resetTitleHistory]);
 
   const createTask = useMutation({
@@ -92,6 +107,7 @@ export function ProjectTasksBoard() {
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["tasks", variables.projectId] });
       replaceTitle("");
+      setNewTaskStatus("todo");
     },
   });
 
@@ -99,14 +115,15 @@ export function ProjectTasksBoard() {
     (e: React.FormEvent) => {
       e.preventDefault();
       const title = draftTitle.trim();
-      if (!title || !activeProjectId) return;
+      const status = newTaskStatus.trim();
+      if (!title || !status || !activeProjectId) return;
       createTask.mutate({
         projectId: activeProjectId,
         title,
-        status: "todo",
+        status,
       });
     },
-    [createTask, draftTitle, activeProjectId],
+    [createTask, draftTitle, newTaskStatus, activeProjectId],
   );
 
   return (
@@ -172,7 +189,7 @@ export function ProjectTasksBoard() {
             </div>
             <form
               onSubmit={onCreate}
-              className="flex flex-col gap-2 sm:flex-row sm:items-end"
+              className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end"
             >
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <label
@@ -189,10 +206,36 @@ export function ProjectTasksBoard() {
                   placeholder="Task title"
                 />
               </div>
+              <div className="flex w-full flex-col gap-1 sm:w-44">
+                <label
+                  htmlFor="task-status"
+                  className="text-xs font-medium text-zinc-600 dark:text-zinc-400"
+                >
+                  Status
+                </label>
+                <input
+                  id="task-status"
+                  name="status"
+                  list="task-status-presets"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                  value={newTaskStatus}
+                  onChange={(e) => setNewTaskStatus(e.target.value)}
+                  placeholder="e.g. todo"
+                  autoComplete="off"
+                />
+                <datalist id="task-status-presets">
+                  {CREATE_TASK_STATUS_PRESETS.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
               <button
                 type="submit"
                 disabled={
-                  !activeProjectId || !draftTitle.trim() || createTask.isPending
+                  !activeProjectId ||
+                  !draftTitle.trim() ||
+                  !newTaskStatus.trim() ||
+                  createTask.isPending
                 }
                 className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
               >
