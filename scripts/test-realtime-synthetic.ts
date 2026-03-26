@@ -30,8 +30,10 @@ export async function runSyntheticRealtimePublishE2e(
 
   console.log(`Base: ${origin}`);
 
+  const projectName = `Synthetic realtime E2E ${Date.now()}`;
+
   const proj = await fetchJson(baseUrl, "POST", "/api/projects", {
-    name: "Synthetic realtime E2E",
+    name: projectName,
     description: "scripts/test-realtime-synthetic.ts",
   });
   if (!proj.ok || !isRecord(proj.data) || typeof proj.data.id !== "string") {

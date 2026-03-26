@@ -33,8 +33,11 @@ export async function runMutationRealtimeE2e(
   console.log(`Base: ${origin}`);
   console.log(`WS:   ${wsUrl}`);
 
+  const projectName = `Broadcast E2E ${Date.now()}`;
+  const patchedProjectName = `${projectName} (patched)`;
+
   const proj = await fetchJson(baseUrl, "POST", "/api/projects", {
-    name: "Broadcast E2E",
+    name: projectName,
     description: "scripts/test-project-broadcast.ts",
   });
   if (!proj.ok || !isRecord(proj.data) || typeof proj.data.id !== "string") {
@@ -43,46 +46,95 @@ export async function runMutationRealtimeE2e(
   const projectId = proj.data.id;
   console.log(`Project: ${projectId}`);
 
-  const ws = new WebSocket(wsUrl);
-  const stream = makeJsonStream(ws);
+  // Open TWO websocket clients to verify all subscribers receive the same sequence.
+  const ws1 = new WebSocket(wsUrl);
+  const stream1 = makeJsonStream(ws1);
+  const ws2 = new WebSocket(wsUrl);
+  const stream2 = makeJsonStream(ws2);
 
-  await new Promise<void>((resolveOpen, reject) => {
-    ws.once("open", () => resolveOpen());
-    ws.once("error", (e) => reject(e));
-  });
+  await Promise.all([
+    new Promise<void>((resolveOpen, reject) => {
+      ws1.once("open", () => resolveOpen());
+      ws1.once("error", (e) => reject(e));
+    }),
+    new Promise<void>((resolveOpen, reject) => {
+      ws2.once("open", () => resolveOpen());
+      ws2.once("error", (e) => reject(e));
+    }),
+  ]);
 
-  const welcome = await stream.next(timeoutMs);
-  if (!isRecord(welcome) || welcome.type !== "welcome") {
-    fail(`Expected welcome, got: ${JSON.stringify(welcome)}`);
+  const welcome1 = await stream1.next(timeoutMs);
+  if (!isRecord(welcome1) || welcome1.type !== "welcome") {
+    fail(`Expected welcome on client1, got: ${JSON.stringify(welcome1)}`);
   }
-  console.log("OK  welcome");
-
-  ws.send(JSON.stringify({ type: "subscribe", projectId }));
-  const sub = await stream.next(timeoutMs);
-  if (!isRecord(sub) || sub.type !== "subscribed") {
-    fail(`Expected subscribed, got: ${JSON.stringify(sub)}`);
+  const welcome2 = await stream2.next(timeoutMs);
+  if (!isRecord(welcome2) || welcome2.type !== "welcome") {
+    fail(`Expected welcome on client2, got: ${JSON.stringify(welcome2)}`);
   }
-  console.log("OK  subscribed");
+  console.log("OK  welcome (2 clients)");
+
+  ws1.send(JSON.stringify({ type: "subscribe", projectId }));
+  ws2.send(JSON.stringify({ type: "subscribe", projectId }));
+
+  const sub1 = await stream1.next(timeoutMs);
+  if (!isRecord(sub1) || sub1.type !== "subscribed") {
+    fail(`Expected subscribed on client1, got: ${JSON.stringify(sub1)}`);
+  }
+  const sub2 = await stream2.next(timeoutMs);
+  if (!isRecord(sub2) || sub2.type !== "subscribed") {
+    fail(`Expected subscribed on client2, got: ${JSON.stringify(sub2)}`);
+  }
+  console.log("OK  subscribed (2 clients)");
+
+  async function expectOnBoth(
+    kind: "task" | "comment" | "project",
+    eventType: string,
+  ): Promise<[
+    { projectId: string; event: Record<string, unknown> },
+    { projectId: string; event: Record<string, unknown> },
+  ]> {
+    const [r1, r2] = await Promise.all([
+      expectRealtime(stream1, kind, eventType, timeoutMs),
+      expectRealtime(stream2, kind, eventType, timeoutMs),
+    ]);
+    return [r1, r2];
+  }
 
   const patchProj = await fetchJson(baseUrl, "PATCH", `/api/projects/${projectId}`, {
-    name: "Broadcast E2E (patched)",
+    name: patchedProjectName,
   });
   if (!patchProj.ok) {
     fail(`PATCH project -> ${patchProj.status}: ${JSON.stringify(patchProj.data)}`);
   }
   {
-    const { projectId: pid, event } = await expectRealtime(
-      stream,
-      "project",
-      "project.updated",
-      timeoutMs,
-    );
-    if (pid !== projectId) {
-      fail(`project.updated projectId mismatch: ${JSON.stringify({ pid, projectId })}`);
+    const [r1, r2] = await expectOnBoth("project", "project.updated");
+    const pid1 = r1.projectId;
+    const pid2 = r2.projectId;
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (pid1 !== projectId || pid2 !== projectId) {
+      fail(
+        `project.updated projectId mismatch: ${JSON.stringify({
+          pid1,
+          pid2,
+          projectId,
+        })}`,
+      );
     }
-    const projRow = event.project;
-    if (!isRecord(projRow) || projRow.name !== "Broadcast E2E (patched)") {
-      fail(`project.updated.project: ${JSON.stringify(projRow)}`);
+    const projRow1 = event1.project;
+    const projRow2 = event2.project;
+    if (
+      !isRecord(projRow1) ||
+      !isRecord(projRow2) ||
+      projRow1.name !== patchedProjectName ||
+      projRow2.name !== patchedProjectName
+    ) {
+      fail(
+        `project.updated.project mismatch: ${JSON.stringify({
+          projRow1,
+          projRow2,
+        })}`,
+      );
     }
     console.log("OK  broadcast project.updated");
   }
@@ -97,14 +149,22 @@ export async function runMutationRealtimeE2e(
   }
   const taskAId = created1.data.id as string;
   {
-    const { projectId: pid, event } = await expectRealtime(
-      stream,
-      "task",
-      "task.created",
-      timeoutMs,
-    );
-    if (pid !== projectId || event.taskId !== taskAId) {
-      fail(`task.created ids mismatch: ${JSON.stringify({ pid, event })}`);
+    const [r1, r2] = await expectOnBoth("task", "task.created");
+    const pid1 = r1.projectId;
+    const pid2 = r2.projectId;
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (pid1 !== projectId || pid2 !== projectId) {
+      fail(
+        `task.created projectId mismatch: ${JSON.stringify({
+          pid1,
+          pid2,
+          projectId,
+        })}`,
+      );
+    }
+    if (event1.taskId !== taskAId || event2.taskId !== taskAId) {
+      fail(`task.created ids mismatch: ${JSON.stringify({ pid1, pid2, event1, event2 })}`);
     }
     console.log("OK  broadcast task.created");
   }
@@ -116,8 +176,12 @@ export async function runMutationRealtimeE2e(
     fail(`PATCH task -> ${patched.status}: ${JSON.stringify(patched.data)}`);
   }
   {
-    const { event } = await expectRealtime(stream, "task", "task.updated", timeoutMs);
-    if (event.taskId !== taskAId) fail(`task.updated taskId: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.updated");
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (event1.taskId !== taskAId || event2.taskId !== taskAId) {
+      fail(`task.updated taskId mismatch: ${JSON.stringify({ event1, event2 })}`);
+    }
     console.log("OK  broadcast task.updated");
   }
 
@@ -129,9 +193,16 @@ export async function runMutationRealtimeE2e(
     fail(`PATCH status -> ${statusRes.status}: ${JSON.stringify(statusRes.data)}`);
   }
   {
-    const { event } = await expectRealtime(stream, "task", "task.statusChanged", timeoutMs);
-    if (event.taskId !== taskAId || event.toStatus !== "in_progress") {
-      fail(`task.statusChanged: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.statusChanged");
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (
+      event1.taskId !== taskAId ||
+      event2.taskId !== taskAId ||
+      event1.toStatus !== "in_progress" ||
+      event2.toStatus !== "in_progress"
+    ) {
+      fail(`task.statusChanged mismatch: ${JSON.stringify({ event1, event2 })}`);
     }
     console.log("OK  broadcast task.statusChanged");
   }
@@ -146,8 +217,17 @@ export async function runMutationRealtimeE2e(
   }
   const taskBId = created2.data.id as string;
   {
-    const { event } = await expectRealtime(stream, "task", "task.created", timeoutMs);
-    if (event.taskId !== taskBId) fail(`second task.created: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.created");
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (event1.taskId !== taskBId || event2.taskId !== taskBId) {
+      fail(
+        `second task.created mismatch: ${JSON.stringify({
+          event1,
+          event2,
+        })}`,
+      );
+    }
     console.log("OK  broadcast task.created (B)");
   }
 
@@ -159,18 +239,36 @@ export async function runMutationRealtimeE2e(
     fail(`PUT dependencies -> ${depPut.status}: ${JSON.stringify(depPut.data)}`);
   }
   {
-    const { event } = await expectRealtime(
-      stream,
-      "task",
-      "task.dependenciesChanged",
-      timeoutMs,
-    );
-    if (event.taskId !== taskAId || !Array.isArray(event.dependencyIds)) {
-      fail(`task.dependenciesChanged: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.dependenciesChanged");
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (
+      event1.taskId !== taskAId ||
+      event2.taskId !== taskAId ||
+      !Array.isArray(event1.dependencyIds) ||
+      !Array.isArray(event2.dependencyIds)
+    ) {
+      fail(
+        `task.dependenciesChanged mismatch: ${JSON.stringify({
+          event1,
+          event2,
+        })}`,
+      );
     }
-    const depIds = event.dependencyIds as unknown[];
-    if (depIds.length !== 1 || depIds[0] !== taskBId) {
-      fail(`dependencyIds expected [${taskBId}], got ${JSON.stringify(depIds)}`);
+    const depIds1 = event1.dependencyIds as unknown[];
+    const depIds2 = event2.dependencyIds as unknown[];
+    if (
+      depIds1.length !== 1 ||
+      depIds1[0] !== taskBId ||
+      depIds2.length !== 1 ||
+      depIds2[0] !== taskBId
+    ) {
+      fail(
+        `dependencyIds expected [${taskBId}], got ${JSON.stringify({
+          depIds1,
+          depIds2,
+        })}`,
+      );
     }
     console.log("OK  broadcast task.dependenciesChanged");
   }
@@ -183,18 +281,32 @@ export async function runMutationRealtimeE2e(
     fail(`POST comment -> ${commentRes.status}: ${JSON.stringify(commentRes.data)}`);
   }
   {
-    const { projectId: pid, event } = await expectRealtime(
-      stream,
-      "comment",
-      "comment.created",
-      timeoutMs,
-    );
-    if (pid !== projectId || event.taskId !== taskAId) {
-      fail(`comment.created: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("comment", "comment.created");
+    const pid1 = r1.projectId;
+    const pid2 = r2.projectId;
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (pid1 !== projectId || pid2 !== projectId) {
+      fail(
+        `comment.created projectId mismatch: ${JSON.stringify({
+          pid1,
+          pid2,
+          projectId,
+        })}`,
+      );
     }
-    const comment = event.comment;
-    if (!isRecord(comment) || comment.content !== "hello broadcast") {
-      fail(`comment.created.comment: ${JSON.stringify(comment)}`);
+    if (event1.taskId !== taskAId || event2.taskId !== taskAId) {
+      fail(`comment.created taskId mismatch: ${JSON.stringify({ event1, event2 })}`);
+    }
+    const comment1 = event1.comment;
+    const comment2 = event2.comment;
+    if (
+      !isRecord(comment1) ||
+      !isRecord(comment2) ||
+      comment1.content !== "hello broadcast" ||
+      comment2.content !== "hello broadcast"
+    ) {
+      fail(`comment.created.comment mismatch: ${JSON.stringify({ comment1, comment2 })}`);
     }
     console.log("OK  broadcast comment.created");
   }
@@ -207,14 +319,21 @@ export async function runMutationRealtimeE2e(
     fail(`PUT dependencies clear -> ${depClear.status}: ${JSON.stringify(depClear.data)}`);
   }
   {
-    const { event } = await expectRealtime(
-      stream,
-      "task",
-      "task.dependenciesChanged",
-      timeoutMs,
-    );
-    if (!Array.isArray(event.dependencyIds) || event.dependencyIds.length !== 0) {
-      fail(`expected empty dependencyIds: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.dependenciesChanged");
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (
+      !Array.isArray(event1.dependencyIds) ||
+      event1.dependencyIds.length !== 0 ||
+      !Array.isArray(event2.dependencyIds) ||
+      event2.dependencyIds.length !== 0
+    ) {
+      fail(
+        `expected empty dependencyIds: ${JSON.stringify({
+          event1,
+          event2,
+        })}`,
+      );
     }
     console.log("OK  broadcast task.dependenciesChanged (clear)");
   }
@@ -224,9 +343,20 @@ export async function runMutationRealtimeE2e(
     fail(`DELETE task B -> ${delB.status}`);
   }
   {
-    const { projectId: pid, event } = await expectRealtime(stream, "task", "task.deleted", timeoutMs);
-    if (pid !== projectId || event.taskId !== taskBId) {
-      fail(`task.deleted: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.deleted");
+    const pid1 = r1.projectId;
+    const pid2 = r2.projectId;
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (pid1 !== projectId || pid2 !== projectId || event1.taskId !== taskBId || event2.taskId !== taskBId) {
+      fail(
+        `task.deleted mismatch: ${JSON.stringify({
+          pid1,
+          pid2,
+          event1,
+          event2,
+        })}`,
+      );
     }
     console.log("OK  broadcast task.deleted");
   }
@@ -236,12 +366,17 @@ export async function runMutationRealtimeE2e(
     fail(`DELETE task A -> ${delA.status}`);
   }
   {
-    const { event } = await expectRealtime(stream, "task", "task.deleted", timeoutMs);
-    if (event.taskId !== taskAId) fail(`task.deleted A: ${JSON.stringify(event)}`);
+    const [r1, r2] = await expectOnBoth("task", "task.deleted");
+    const event1 = r1.event;
+    const event2 = r2.event;
+    if (event1.taskId !== taskAId || event2.taskId !== taskAId) {
+      fail(`task.deleted A mismatch: ${JSON.stringify({ event1, event2 })}`);
+    }
     console.log("OK  broadcast task.deleted (A)");
   }
 
-  ws.close();
+  ws1.close();
+  ws2.close();
   console.log("\nAll mutation-driven realtime checks passed.");
 }
 
