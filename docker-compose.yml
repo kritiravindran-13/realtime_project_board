@@ -1,0 +1,21 @@
+# Quick start:
+#   docker compose up --build
+# Then open http://localhost:3000
+#
+# SQLite file lives in Docker volume `sqlite_data` (survives container restarts).
+# To reset the DB: docker compose down -v && docker compose up --build
+
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: file:./data/app.db
+      PORT: "3000"
+      HOST: "0.0.0.0"
+    volumes:
+      - sqlite_data:/app/prisma/data
+
+volumes:
+  sqlite_data:
