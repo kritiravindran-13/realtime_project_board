@@ -19,6 +19,33 @@ function parseAssigneeIds(body: CreateTaskBody): string[] {
   return raw.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
 }
 
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const projectId = url.searchParams.get("projectId");
+    if (typeof projectId !== "string" || projectId.trim().length === 0) {
+      return Response.json(
+        { error: "Query parameter `projectId` is required." },
+        { status: 400 },
+      );
+    }
+
+    const tasks = await prisma.task.findMany({
+      where: { projectId: projectId.trim() },
+      orderBy: { id: "asc" },
+      include: {
+        dependencies: { select: { id: true } },
+        assignedTo: { select: { id: true, author: true } },
+      },
+    });
+
+    return Response.json(tasks);
+  } catch (error) {
+    console.error("Failed to list tasks", error);
+    return Response.json({ error: "Failed to list tasks" }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CreateTaskBody;

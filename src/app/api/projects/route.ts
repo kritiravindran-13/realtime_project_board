@@ -52,6 +52,14 @@ export async function POST(request: Request) {
 
     return Response.json(project, { status: 201 });
   } catch (error) {
+    const prismaError = error as { code?: string };
+    if (prismaError.code === "P2002") {
+      return Response.json(
+        { error: "A project with this name already exists." },
+        { status: 409 },
+      );
+    }
+
     console.error("Failed to create project", error);
     return Response.json(
       { error: "Failed to create project" },

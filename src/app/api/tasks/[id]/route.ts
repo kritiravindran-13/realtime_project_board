@@ -23,6 +23,31 @@ function parseAssigneeIdsForUpdate(body: UpdateTaskBody): string[] | null | unde
   return undefined;
 }
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const task = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        dependencies: { select: { id: true, title: true, status: true } },
+        assignedTo: { select: { id: true, author: true } },
+      },
+    });
+
+    if (!task) {
+      return Response.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    return Response.json(task);
+  } catch (error) {
+    console.error("Failed to get task", error);
+    return Response.json({ error: "Failed to get task" }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

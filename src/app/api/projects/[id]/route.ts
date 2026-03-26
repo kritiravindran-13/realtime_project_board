@@ -48,6 +48,15 @@ async function updateProject(
   return Response.json(updated);
 }
 
+function isUniqueNameError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: string }).code === "P2002"
+  );
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -81,6 +90,12 @@ export async function PUT(
     if (maybeError.code === "P2025") {
       return Response.json({ error: "Project not found" }, { status: 404 });
     }
+    if (isUniqueNameError(error)) {
+      return Response.json(
+        { error: "A project with this name already exists." },
+        { status: 409 },
+      );
+    }
 
     console.error("Failed to update project", error);
     return Response.json({ error: "Failed to update project" }, { status: 500 });
@@ -97,6 +112,12 @@ export async function PATCH(
     const maybeError = error as { code?: string };
     if (maybeError.code === "P2025") {
       return Response.json({ error: "Project not found" }, { status: 404 });
+    }
+    if (isUniqueNameError(error)) {
+      return Response.json(
+        { error: "A project with this name already exists." },
+        { status: 409 },
+      );
     }
 
     console.error("Failed to patch project", error);

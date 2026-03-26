@@ -20,7 +20,7 @@ model Project {
   tasks      Task[]
   taskEvents TaskEvent[]
 
-  @@index([name])
+  @@unique([name])
 }
 
 model Task {
