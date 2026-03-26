@@ -31,16 +31,20 @@ type TaskDetailsPanelProps = {
   projectId: string | null;
   /** Other tasks in the project (for picking dependencies). */
   projectTasks: ApiTask[];
+  /** Called when user clicks a dependency chip. */
+  onSelectTask: (taskId: string | null) => void;
 };
 
 function TaskDependenciesEditor({
   task,
   projectId,
   candidates,
+  onSelectTask,
 }: {
   task: ApiTaskDetail;
   projectId: string;
   candidates: ApiTask[];
+  onSelectTask: (taskId: string | null) => void;
 }) {
   const queryClient = useQueryClient();
   const taskId = task.id;
@@ -80,6 +84,23 @@ function TaskDependenciesEditor({
       <p className="text-xs text-zinc-500">
         Hold Ctrl/Cmd (or Shift) to pick multiple tasks this one depends on.
       </p>
+      <div className="flex flex-wrap gap-1">
+        {task.dependencies.length === 0 ? (
+          <span className="text-xs text-zinc-500">No dependencies.</span>
+        ) : (
+          task.dependencies.map((d) => (
+            <button
+              key={d.id}
+              className="rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+              title={d.id}
+              type="button"
+              onClick={() => onSelectTask(d.id)}
+            >
+              {d.title} ({d.status})
+            </button>
+          ))
+        )}
+      </div>
       <select
         multiple
         size={Math.min(10, Math.max(4, candidates.length))}
@@ -294,6 +315,7 @@ export function TaskDetailsPanel({
   taskId,
   projectId,
   projectTasks,
+  onSelectTask,
 }: TaskDetailsPanelProps) {
   const queryClient = useQueryClient();
   const { subscribe } = useRealtime(projectId);
@@ -374,6 +396,7 @@ export function TaskDetailsPanel({
         task={task}
         projectId={projectId}
         candidates={candidates}
+        onSelectTask={onSelectTask}
       />
 
       <TaskDeleteSection

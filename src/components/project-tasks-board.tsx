@@ -265,6 +265,7 @@ export function ProjectTasksBoard() {
             taskId={effectiveSelectedTaskId}
             projectId={activeProjectId}
             projectTasks={tasks ?? []}
+            onSelectTask={setSelectedTaskId}
           />
         </aside>
       </div>
