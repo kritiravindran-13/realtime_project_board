@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { mapTaskForApi } from "../../../../../lib/server/map-task-api";
 import { publishTaskEvent } from "../../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../../lib/server/prisma";
 
@@ -75,7 +76,7 @@ export async function GET(
       where: { id },
       include: {
         dependencies: { select: { id: true, title: true, status: true } },
-        assignedTo: { select: { id: true, author: true } },
+        assignees: { select: { id: true, author: true } },
       },
     });
 
@@ -83,7 +84,7 @@ export async function GET(
       return Response.json({ error: "Task not found" }, { status: 404 });
     }
 
-    return Response.json(task);
+    return Response.json(mapTaskForApi(task));
   } catch (error) {
     console.error("Failed to get task", error);
     return Response.json({ error: "Failed to get task" }, { status: 500 });
@@ -146,13 +147,13 @@ export async function PATCH(
         ...(body.status !== undefined ? { status: body.status.trim() } : {}),
         ...(authorsProvided
           ? {
-              assignedTo: {
+              assignees: {
                 set: resolvedAuthorIds?.map((aid) => ({ id: aid })) ?? [],
               },
             }
           : assigneeIds !== undefined
             ? {
-                assignedTo: {
+                assignees: {
                   set:
                     assigneeIds === null
                       ? []
@@ -173,19 +174,20 @@ export async function PATCH(
         dependencies: {
           select: { id: true },
         },
-        assignedTo: {
+        assignees: {
           select: { id: true, author: true },
         },
       },
     });
 
+    const apiTask = mapTaskForApi(updated);
     publishTaskEvent(updated.projectId, {
       type: "task.updated",
       taskId: updated.id,
-      task: updated,
+      task: apiTask,
     });
 
-    return Response.json(updated);
+    return Response.json(apiTask);
   } catch (error) {
     const maybeError = error as { code?: string };
     if (maybeError.code === "P2025") {

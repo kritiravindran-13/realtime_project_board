@@ -31,7 +31,8 @@ model Task {
   title  String
   status String
 
-  assignedTo String[] 
+  /// Assignees (relation field name avoids clashing with legacy `assignedTo` scalar columns).
+  assignees User[] @relation("TaskAssignees")
 
   // Shape: { priority: number, description: string, tags: string[], customFields: object }
   configuration Json?
@@ -44,6 +45,15 @@ model Task {
 
   @@index([projectId])
   @@index([status])
+}
+
+model User {
+  id      String   @id @default(cuid())
+  author  String
+  created DateTime @default(now())
+
+  assignedTasks Task[]    @relation("TaskAssignees")
+  comments      Comment[]
 }
 
 model Comment {

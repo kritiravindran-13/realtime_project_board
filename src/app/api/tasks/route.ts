@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { mapTaskForApi, mapTasksForApi } from "../../../../lib/server/map-task-api";
 import { publishTaskEvent } from "../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../lib/server/prisma";
 
@@ -71,11 +72,11 @@ export async function GET(request: Request) {
       orderBy: { id: "asc" },
       include: {
         dependencies: { select: { id: true } },
-        assignedTo: { select: { id: true, author: true } },
+        assignees: { select: { id: true, author: true } },
       },
     });
 
-    return Response.json(tasks);
+    return Response.json(mapTasksForApi(tasks));
   } catch (error) {
     console.error("Failed to list tasks", error);
     return Response.json({ error: "Failed to list tasks" }, { status: 500 });
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
         status: body.status.trim(),
         ...(finalAssigneeIds.length > 0
           ? {
-              assignedTo: {
+              assignees: {
                 connect: finalAssigneeIds.map((id) => ({ id })),
               },
             }
@@ -148,19 +149,20 @@ export async function POST(request: Request) {
         dependencies: {
           select: { id: true },
         },
-        assignedTo: {
+        assignees: {
           select: { id: true, author: true },
         },
       },
     });
 
+    const apiTask = mapTaskForApi(created);
     publishTaskEvent(created.projectId, {
       type: "task.created",
       taskId: created.id,
-      task: created,
+      task: apiTask,
     });
 
-    return Response.json(created, { status: 201 });
+    return Response.json(apiTask, { status: 201 });
   } catch (error) {
     const maybeError = error as { code?: string };
     if (maybeError.code === "P2025") {
