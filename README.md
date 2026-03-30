@@ -8,7 +8,7 @@ Next.js app with a **custom Node server** (`server.ts`) that serves the app and 
 
 - **Single custom Node entry (`server.ts`)** — The app is not served by `next start` alone. One process owns both the Next request handler and a `ws` WebSocket server on `/api/ws`, so HTTP API routes and upgrades share one runtime. That avoids splitting WebSocket concerns across serverless functions and keeps subscription state in memory on each instance (see tradeoffs below).
 
-- **REST APIs + typed events** — Mutations go through normal REST handlers (`/api/tasks`, etc.). The database is the source of truth. After a successful write, the server emits a **structured realtime envelope** (`RealtimeMessage`: task / comment / project) so clients can patch or invalidate without inventing a second protocol.
+- **REST APIs + typed events** — Mutations go through normal REST handlers (`/api/tasks`, etc.). The database is the source of truth. After a successful write, the server emits a **structured realtime envelope** (`RealtimeMessage`: task / comment / project) so clients can patch or invalidate without a second protocol.
 
 - **SQLite via Prisma** — Chosen for zero external dependencies in dev and simple Docker deploys. The schema models projects, tasks, comments, users, and task dependencies; Prisma keeps queries and migrations maintainable.
 
@@ -24,13 +24,13 @@ Next.js app with a **custom Node server** (`server.ts`) that serves the app and 
 
 ### How sync is handled (client and server)
 
-- **Server** — Persistence is always through Prisma; realtime is **notify-only** (events carry enough payload to update UIs, not to skip the DB on writes).
+- **Server** — Persistence is always through Prisma; realtime is **notify-only** (events carry payload to update UIs, not to skip the DB on writes).
 
 - **Client** — Sync is **“server state + realtime hints”**: Query holds authoritative snapshots from HTTP; WebSocket events either **merge** into that cache (task create/update/status/dependencies/delete) or **trigger refetch** when the event implies broader inconsistency (e.g. comments, project metadata).
 
 - **Conflict handling** — There is no CRDT for tasks; last write wins at the API. If a merge fails or looks ambiguous, the client falls back to **invalidate + refetch**.
 
-### How you’d scale the system over time
+### How to scale the system over time
 
 | Stage | Direction |
 |--------|-----------|
@@ -44,7 +44,7 @@ Next.js app with a **custom Node server** (`server.ts`) that serves the app and 
 
 - **Custom server** — Gains a clean WS story and shared code with API routes; **loses** one-click deploy to pure serverless/edge without replacing WebSockets (e.g. with a managed realtime service or separate WS service).
 
-- **SQLite** — Simple and fast for development; **not** ideal for many concurrent writers or multi-region HA. Plan a Postgres migration when scale or ops requirements grow.
+- **SQLite** — Simple and fast for development; **not** ideal for many concurrent writers or multi-region. I would plan a Postgres migration when scale requirements grow.
 
 - **In-memory subscription maps per process** — Fast and simple; **without Redis**, scaling to multiple instances means clients only see events from the instance they’re connected to—**Redis pub/sub** addresses that for broadcasts.
 
