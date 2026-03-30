@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useProjectTasks } from "@/hooks/use-project-tasks";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import { fetchProjects, ProjectList } from "./project-list";
@@ -306,6 +306,10 @@ export function ProjectTasksBoard() {
     return tasks.some((t) => t.id === selectedTaskId) ? selectedTaskId : null;
   }, [selectedTaskId, tasks]);
 
+  const handleSelectProject = useCallback((id: string) => {
+    setProjectId(id);
+  }, []);
+
   return (
     <div className="mx-auto flex min-h-full max-w-7xl flex-col gap-8 px-4 py-10 font-sans text-zinc-900 dark:text-zinc-100">
       <header className="flex flex-col gap-2 border-b border-zinc-200 pb-6 dark:border-zinc-800">
@@ -325,7 +329,7 @@ export function ProjectTasksBoard() {
             <div className="min-w-0 flex-1">
               <ProjectList
                 selectedId={activeProjectId}
-                onSelect={(id) => setProjectId(id)}
+                onSelect={handleSelectProject}
                 className="max-w-none"
               />
             </div>

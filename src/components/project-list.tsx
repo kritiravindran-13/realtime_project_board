@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { memo } from "react";
 
 export type ApiProject = { id: string; name: string; description?: string | null };
 
@@ -20,7 +21,7 @@ type ProjectListProps = {
 /**
  * Loads projects from `GET /api/projects` and renders a dropdown to pick one.
  */
-export function ProjectList({ selectedId, onSelect, className = "" }: ProjectListProps) {
+function ProjectListImpl({ selectedId, onSelect, className = "" }: ProjectListProps) {
   const { data, isPending, isError, error } = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjects,
@@ -72,3 +73,5 @@ export function ProjectList({ selectedId, onSelect, className = "" }: ProjectLis
     </select>
   );
 }
+
+export const ProjectList = memo(ProjectListImpl);

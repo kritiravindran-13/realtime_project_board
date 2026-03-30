@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type { ApiTask } from "@/hooks/use-project-tasks";
 import type { ApiTaskDetail } from "@/hooks/use-task-detail";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -558,7 +558,7 @@ function TaskDeleteSection({
  * Loads a task via `GET /api/tasks/[id]`, keeps it fresh with project realtime, and hosts
  * dependency editing (`PUT /api/tasks/[id]/dependencies`) plus {@link CommentList}.
  */
-export function TaskDetailsPanel({
+function TaskDetailsPanelImpl({
   taskId,
   projectId,
   projectTasks,
@@ -649,3 +649,5 @@ export function TaskDetailsPanel({
     </div>
   );
 }
+
+export const TaskDetailsPanel = memo(TaskDetailsPanelImpl);

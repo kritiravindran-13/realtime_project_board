@@ -1,5 +1,10 @@
 import { Prisma } from "@/generated/prisma/client";
+import type { ApiTask } from "../../../../lib/shared/api-task";
 import { mapTaskForApi, mapTasksForApi } from "../../../../lib/server/map-task-api";
+import {
+  getHotTasksCached,
+  setHotTasksFromDb,
+} from "../../../../lib/server/project-tasks-hot-cache";
 import { publishTaskEvent } from "../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../lib/server/prisma";
 
@@ -67,8 +72,14 @@ export async function GET(request: Request) {
       );
     }
 
+    const pid = projectId.trim();
+    const cached = await getHotTasksCached(pid);
+    if (cached) {
+      return Response.json(cached);
+    }
+
     const tasks = await prisma.task.findMany({
-      where: { projectId: projectId.trim() },
+      where: { projectId: pid },
       orderBy: { id: "asc" },
       include: {
         dependencies: { select: { id: true } },
@@ -76,7 +87,9 @@ export async function GET(request: Request) {
       },
     });
 
-    return Response.json(mapTasksForApi(tasks));
+    const mapped = mapTasksForApi(tasks) as ApiTask[];
+    await setHotTasksFromDb(pid, mapped);
+    return Response.json(mapped);
   } catch (error) {
     console.error("Failed to list tasks", error);
     return Response.json({ error: "Failed to list tasks" }, { status: 500 });

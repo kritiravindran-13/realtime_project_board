@@ -12,6 +12,7 @@
     "test:broadcast": "tsx scripts/test-project-broadcast.ts",
     "test:realtime": "tsx scripts/test-realtime.ts",
     "test:realtime:synthetic": "tsx scripts/test-realtime-synthetic.ts",
+    "test:redis": "tsx scripts/test-redis.ts",
     "db:dedupe-projects": "tsx scripts/dedupe-project-names.ts",
     "db:seed-tasks": "tsx scripts/seed-tasks-bulk.ts"
   },
@@ -22,6 +23,7 @@
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "redis": "^4.7.1",
     "ws": "^8.20.0"
   },
   "devDependencies": {

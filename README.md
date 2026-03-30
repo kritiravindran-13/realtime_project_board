@@ -5,7 +5,8 @@ Next.js app with a **custom Node server** (`server.ts`) that serves the app and 
 ## Prerequisites
 
 - **Node.js** 20+ and npm  
-- **Docker Desktop** (optional) — only if you use Docker below
+- **Docker Desktop** (optional) — only if you use Docker below  
+- **Redis** (optional) — only if you set `REDIS_URL` for scaled-out realtime / hot cache (see [Redis (optional)](#redis-optional))
 
 ## Run locally
 
@@ -26,6 +27,8 @@ cp .env.example .env
 ```
 
 `DATABASE_URL` should point at a SQLite file **relative to the `prisma/` directory** (see `lib/server/prisma.ts`). The default in `.env.example` is `file:./dev.db` (database file: `prisma/dev.db`).
+
+**Optional — `REDIS_URL`:** Leave unset for normal local development (realtime uses in-process WebSockets only). Set `REDIS_URL` when you want Redis-backed pub/sub across multiple app instances and a hot cache for `GET /api/tasks`. See [Redis (optional)](#redis-optional).
 
 ### 3. Database
 
@@ -91,15 +94,8 @@ docker compose build --no-cache && docker compose up
 | `npm run start` | Production server (`tsx server.ts`) |
 | `npm run lint` | ESLint |
 | `npm run db:dedupe-projects` | One-off script to dedupe project names in SQLite (see script header) |
+| `npm run test:redis` | Redis pub/sub + hot-cache checks (requires `REDIS_URL` and a running Redis; skips if unset) |
 
 WebSocket / realtime test scripts: `npm run test:ws`, `test:broadcast`, `test:realtime`, etc. (see `package.json`).
 
----
-
-## Learn more
-
-- [Next.js documentation](https://nextjs.org/docs)
-- [Prisma documentation](https://www.prisma.io/docs)
-- [Docker Compose](https://docs.docker.com/compose/)
-
-This app does **not** use the stock `next start` server alone; deployment needs a **Node** host that can run `server.ts` and accept WebSocket upgrades (not a typical static-only or purely serverless Next host without extra configuration).
+This app does **not** use `next start` server alone; deployment needs a **Node** host that can run `server.ts` and accept WebSocket upgrades (not a typical static-only or purely serverless Next host without extra configuration).

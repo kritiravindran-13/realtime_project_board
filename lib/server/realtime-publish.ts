@@ -4,28 +4,34 @@ import type {
   RealtimeMessage,
   TaskRealtimeEvent,
 } from "../shared/types";
-import { publishToProject } from "./ws-connection-registry";
+import { applyHotTaskCacheFromMessage, invalidateHotTasksCache } from "./project-tasks-hot-cache";
+import { fanoutRealtimeMessage } from "./realtime-redis";
 
 export const REALTIME_TOPIC = "project";
 
 export function publishRealtimeMessage(message: RealtimeMessage): number {
-  return publishToProject(message.projectId, REALTIME_TOPIC, message);
+  return fanoutRealtimeMessage(message);
 }
 
 export function publishTaskEvent(projectId: string, event: TaskRealtimeEvent): number {
-  return publishRealtimeMessage({ kind: "task", projectId, event });
+  const message: RealtimeMessage = { kind: "task", projectId, event };
+  applyHotTaskCacheFromMessage(message);
+  return fanoutRealtimeMessage(message);
 }
 
 export function publishCommentEvent(
   projectId: string,
   event: CommentRealtimeEvent,
 ): number {
-  return publishRealtimeMessage({ kind: "comment", projectId, event });
+  return fanoutRealtimeMessage({ kind: "comment", projectId, event });
 }
 
 export function publishProjectEvent(
   projectId: string,
   event: ProjectRealtimeEvent,
 ): number {
-  return publishRealtimeMessage({ kind: "project", projectId, event });
+  if (event.type === "project.deleted") {
+    invalidateHotTasksCache(projectId);
+  }
+  return fanoutRealtimeMessage({ kind: "project", projectId, event });
 }

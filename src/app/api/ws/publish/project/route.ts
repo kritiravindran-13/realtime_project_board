@@ -1,4 +1,5 @@
-import { publishToProject } from "../../../../../../lib/server/ws-connection-registry";
+import type { RealtimeMessage } from "../../../../../../lib/shared/types";
+import { publishRealtimeMessage } from "../../../../../../lib/server/realtime-publish";
 
 type Body = {
   projectId?: unknown;
@@ -33,11 +34,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const recipients = publishToProject(
-      body.projectId.trim(),
-      body.topic.trim(),
-      body.payload,
-    );
+    const projectId = body.projectId.trim();
+    const payload = body.payload as RealtimeMessage;
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof payload.projectId !== "string" ||
+      payload.projectId !== projectId
+    ) {
+      return Response.json(
+        { error: "`payload` must be a RealtimeMessage whose `projectId` matches the request." },
+        { status: 400 },
+      );
+    }
+
+    const recipients = publishRealtimeMessage(payload);
 
     return Response.json({ ok: true, recipients });
   } catch {

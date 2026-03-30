@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { ApiTask } from "@/hooks/use-project-tasks";
 import { useProjectTasks } from "@/hooks/use-project-tasks";
 
@@ -45,15 +45,19 @@ function groupTasksByStatus(tasks: ApiTask[]): Map<string, ApiTask[]> {
   return map;
 }
 
-function TaskCard({
+const TaskCard = memo(function TaskCard({
   task,
   selected,
-  onToggleSelect,
+  onSelectTask,
 }: {
   task: ApiTask;
   selected: boolean;
-  onToggleSelect: () => void;
+  onSelectTask: (taskId: string | null) => void;
 }) {
+  const handleToggle = useCallback(() => {
+    onSelectTask(selected ? null : task.id);
+  }, [onSelectTask, selected, task.id]);
+
   return (
     <div
       role="button"
@@ -63,11 +67,11 @@ function TaskCard({
         e.dataTransfer.setData("text/plain", task.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      onClick={onToggleSelect}
+      onClick={handleToggle}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onToggleSelect();
+          handleToggle();
         }
       }}
       className={`w-full cursor-grab rounded-lg border px-3 py-2 text-left text-sm outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-zinc-400 ${
@@ -85,9 +89,9 @@ function TaskCard({
       ) : null}
     </div>
   );
-}
+});
 
-function VirtualizedTaskColumn({
+function VirtualizedTaskColumnInner({
   columnTasks,
   selectedTaskId,
   onSelectTask,
@@ -130,11 +134,7 @@ function VirtualizedTaskColumn({
               <TaskCard
                 task={task}
                 selected={selectedTaskId === task.id}
-                onToggleSelect={() =>
-                  onSelectTask(
-                    selectedTaskId === task.id ? null : task.id,
-                  )
-                }
+                onSelectTask={onSelectTask}
               />
             </div>
           );
@@ -143,6 +143,8 @@ function VirtualizedTaskColumn({
     </div>
   );
 }
+
+const VirtualizedTaskColumn = memo(VirtualizedTaskColumnInner);
 
 type TaskBoardProps = {
   projectId: string | null;
@@ -155,7 +157,7 @@ type TaskBoardProps = {
  * `PATCH /api/tasks/[id]/status`. Columns with more than {@link COLUMN_VIRTUALIZE_THRESHOLD} tasks
  * use windowed rendering so long lists stay scrollable and fast.
  */
-export function TaskBoard({
+function TaskBoardImpl({
   projectId,
   selectedTaskId,
   onSelectTask,
@@ -306,11 +308,7 @@ export function TaskBoard({
                         <TaskCard
                           task={task}
                           selected={selectedTaskId === task.id}
-                          onToggleSelect={() =>
-                            onSelectTask(
-                              selectedTaskId === task.id ? null : task.id,
-                            )
-                          }
+                          onSelectTask={onSelectTask}
                         />
                       </li>
                     ))}
@@ -333,3 +331,5 @@ export function TaskBoard({
     </div>
   );
 }
+
+export const TaskBoard = memo(TaskBoardImpl);

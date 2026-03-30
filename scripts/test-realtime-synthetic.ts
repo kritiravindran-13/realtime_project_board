@@ -82,10 +82,16 @@ export async function runSyntheticRealtimePublishE2e(
     topic: REALTIME_TOPIC,
     payload: realtimeMessage,
   });
-  if (!pub.ok || !isRecord(pub.data) || pub.data.recipients !== 1) {
+  const expectedRecipients = process.env.REDIS_URL?.trim() ? 0 : 1;
+  if (
+    !pub.ok ||
+    !isRecord(pub.data) ||
+    typeof pub.data.recipients !== "number" ||
+    pub.data.recipients !== expectedRecipients
+  ) {
     fail(`POST /api/ws/publish/project -> ${pub.status}: ${JSON.stringify(pub.data)}`);
   }
-  console.log("OK  HTTP publish recipients=1");
+  console.log(`OK  HTTP publish recipients=${expectedRecipients} (Redis uses async fanout)`);
 
   const { projectId: pid, event } = await expectRealtime(
     stream,

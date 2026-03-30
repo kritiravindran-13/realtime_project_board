@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { useRealtime } from "@/hooks/use-realtime";
 
 export type ApiComment = {
@@ -36,7 +36,7 @@ type CommentListProps = {
 /**
  * Lists comments from `GET /api/tasks/[id]/comments`, supports posting, and refreshes on realtime `comment` events.
  */
-export function CommentList({ taskId, projectId }: CommentListProps) {
+function CommentListImpl({ taskId, projectId }: CommentListProps) {
   const queryClient = useQueryClient();
   const { subscribe } = useRealtime(projectId);
 
@@ -213,3 +213,5 @@ export function CommentList({ taskId, projectId }: CommentListProps) {
     </div>
   );
 }
+
+export const CommentList = memo(CommentListImpl);

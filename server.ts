@@ -1,12 +1,13 @@
 import { createServer } from "node:http";
 import { URL } from "node:url";
 import next from "next";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
 import {
   handleClientMessage,
   registerWebSocketClient,
   startWebSocketHeartbeat,
 } from "./lib/server/ws-connection-registry";
+import { startRealtimeRedisSubscriber } from "./lib/server/realtime-redis";
 import { registerWebSocketServer } from "./lib/server/ws-registry";
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
@@ -56,6 +57,7 @@ function isAppWebSocketPath(pathname: string): boolean {
 
 async function main() {
   await app.prepare();
+  await startRealtimeRedisSubscriber();
   const handle = app.getRequestHandler();
   const upgradeHandler = app.getUpgradeHandler();
 
