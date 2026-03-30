@@ -2,6 +2,67 @@
 
 Next.js app with a **custom Node server** (`server.ts`) that serves the app and a **WebSocket** endpoint at `/api/ws`, plus **Prisma** and **SQLite** for projects, tasks, comments, and dependencies.
 
+## Architecture & design
+
+### Architecture decisions
+
+- **Single custom Node entry (`server.ts`)** — The app is not served by `next start` alone. One process owns both the Next request handler and a `ws` WebSocket server on `/api/ws`, so HTTP API routes and upgrades share one runtime. That avoids splitting WebSocket concerns across serverless functions and keeps subscription state in memory on each instance (see tradeoffs below).
+
+- **REST APIs + typed events** — Mutations go through normal REST handlers (`/api/tasks`, etc.). The database is the source of truth. After a successful write, the server emits a **structured realtime envelope** (`RealtimeMessage`: task / comment / project) so clients can patch or invalidate without inventing a second protocol.
+
+- **SQLite via Prisma** — Chosen for zero external dependencies in dev and simple Docker deploys. The schema models projects, tasks, comments, users, and task dependencies; Prisma keeps queries and migrations maintainable.
+
+### Data flow and synchronization strategy
+
+1. **Initial load** — The client uses **TanStack Query** to `GET` resources (e.g. `GET /api/tasks?projectId=…`). That result is cached under a stable query key (`["tasks", projectId]`).
+
+2. **Realtime channel** — The browser opens **one WebSocket per active `projectId`** (ref-counted in `src/lib/realtime/ws-hub.ts`), then sends `subscribe` with that id. The server registers the socket in a **project-scoped set** and pushes JSON frames `{ topic: "project", payload: RealtimeMessage }`.
+
+3. **After a mutation** — The API handler updates the DB, then calls **`publishTaskEvent` / `publishCommentEvent` / `publishProjectEvent`**. Subscribers receive the event. For the task list, the client **merges** task-shaped events into the cached list when possible; for project-wide or comment events, or when merge is unsafe, it **invalidates** the query so the next read refetches from the API.
+
+4. **Optional Redis path** — If `REDIS_URL` is set, publishes go to **Redis pub/sub** first; each Node process runs a **subscriber** that forwards to its local WebSocket subscribers. That is how multiple app instances stay in sync without every instance talking to the DB just to broadcast. A **hot task list** key in Redis can satisfy `GET /api/tasks` without hitting SQLite on every read, updated by merging task events after writes (see tradeoffs).
+
+### How sync is handled (client and server)
+
+- **Server** — Persistence is always through Prisma; realtime is **notify-only** (events carry enough payload to update UIs, not to skip the DB on writes).
+
+- **Client** — Sync is **“server state + realtime hints”**: Query holds authoritative snapshots from HTTP; WebSocket events either **merge** into that cache (task create/update/status/dependencies/delete) or **trigger refetch** when the event implies broader inconsistency (e.g. comments, project metadata).
+
+- **Conflict handling** — There is no CRDT for tasks; last write wins at the API. If a merge fails or looks ambiguous, the client falls back to **invalidate + refetch**.
+
+### How you’d scale the system over time
+
+| Stage | Direction |
+|--------|-----------|
+| **Single instance** | Default: in-memory WebSocket registry, SQLite file. Enough for demos and moderate single-host traffic. |
+| **Multiple Node processes / hosts** | Add **Redis** (`REDIS_URL`) for pub/sub so every instance receives publishes and forwards to its own connected clients. Use a load balancer with **sticky sessions** for WebSockets if clients must hit the same box, *or* rely on Redis fanout so each instance only needs its own subscribers (still ensure WS upgrades reach *an* app instance). |
+| **Database** | Move from **SQLite** to **Postgres** (or similar) for concurrent writers, backups, and managed hosting. Point `DATABASE_URL` at the new URL; Prisma eases migration. |
+| **Redis** | Start with single Redis; later use managed Redis with replication / failover if pub/sub or cache becomes critical path. |
+| **Heavy read traffic** | Hot cache keys + CDN for static assets; consider read replicas if you introduce Postgres. |
+
+### Tradeoffs
+
+- **Custom server** — Gains a clean WS story and shared code with API routes; **loses** one-click deploy to pure serverless/edge without replacing WebSockets (e.g. with a managed realtime service or separate WS service).
+
+- **SQLite** — Simple and fast for development; **not** ideal for many concurrent writers or multi-region HA. Plan a Postgres migration when scale or ops requirements grow.
+
+- **In-memory subscription maps per process** — Fast and simple; **without Redis**, scaling to multiple instances means clients only see events from the instance they’re connected to—**Redis pub/sub** addresses that for broadcasts.
+
+- **Hot cache in Redis** — Reduces read load and can lag slightly under races; the code **merges** or **invalidates** on failure to avoid serving permanently stale lists.
+
+### Technology choices and justifications
+
+| Choice | Why |
+|--------|-----|
+| **Next.js (App Router)** | Modern React server components / routing, API routes colocated with UI, good DX. |
+| **Prisma** | Schema-first model, type-safe client, straightforward SQLite → Postgres path. |
+| **TanStack Query** | Standard cache keys, invalidation, and optimistic-style updates for REST + realtime. |
+| **`ws`** | Lightweight WebSocket server integrated with the same Node HTTP upgrade path as Next. |
+| **Redis (optional)** | Industry-standard pub/sub for cross-process broadcast; string cache for hot reads. |
+| **tsx** | Run TypeScript for `server.ts` without a separate compile step in dev. |
+
+---
+
 ## Prerequisites
 
 - **Node.js** 20+ and npm  
@@ -55,6 +116,19 @@ npm run start
 ```
 
 Uses `NODE_ENV=production` and `tsx server.ts`. Set `DATABASE_URL` in `.env` (or the environment) before `npm run start`.
+
+---
+
+## Redis (optional)
+
+Set **`REDIS_URL`** in `.env` (see `.env.example`) when you run **multiple Node instances** or want the **hot task list cache** for `GET /api/tasks`. Without it, realtime stays in-process only.
+
+**Run Redis locally**
+
+- **Docker** (Docker Desktop must be running): `docker run --rm -p 6379:6379 redis:7-alpine`
+- **Homebrew (macOS):** `brew install redis && brew services start redis`
+
+Then set `REDIS_URL=redis://127.0.0.1:6379` and restart the app. Verify with `REDIS_URL=… npm run test:redis`.
 
 ---
 
