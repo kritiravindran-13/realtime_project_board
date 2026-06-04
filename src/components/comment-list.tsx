@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useEffect, useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { useRealtime } from "@/hooks/use-realtime";
 
 export type ApiComment = {
@@ -39,6 +40,7 @@ type CommentListProps = {
 function CommentListImpl({ taskId, projectId }: CommentListProps) {
   const queryClient = useQueryClient();
   const { subscribe } = useRealtime(projectId);
+  const { user } = useAuth();
 
   const query = useQuery({
     queryKey: ["comments", taskId],
@@ -56,7 +58,6 @@ function CommentListImpl({ taskId, projectId }: CommentListProps) {
     });
   }, [projectId, taskId, subscribe, queryClient]);
 
-  const [author, setAuthor] = useState("");
   const [content, setContent] = useState("");
 
   const deleteComment = useMutation({
@@ -85,7 +86,7 @@ function CommentListImpl({ taskId, projectId }: CommentListProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          author: author.trim() || "Anonymous",
+          ...(user ? { authorId: user.id } : {}),
           content: content.trim(),
         }),
       });
@@ -180,25 +181,27 @@ function CommentListImpl({ taskId, projectId }: CommentListProps) {
         className="flex flex-col gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!content.trim()) return;
+          if (!content.trim() || !user) return;
           postComment.mutate();
         }}
       >
-        <input
-          className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-600 dark:bg-zinc-950"
-          placeholder="Your name (optional)"
-          value={author}
-          onChange={(e) => setAuthor(e.target.value)}
-        />
+        {user ? (
+          <p className="text-xs text-zinc-500">
+            Posting as <span className="font-medium text-zinc-700 dark:text-zinc-300">{user.username}</span>
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-500">Sign in above to post comments.</p>
+        )}
         <textarea
           className="min-h-[72px] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-950"
-          placeholder="Write a comment…"
+          placeholder={user ? "Write a comment…" : "Sign in to comment"}
           value={content}
           onChange={(e) => setContent(e.target.value)}
+          disabled={!user}
         />
         <button
           type="submit"
-          disabled={!content.trim() || postComment.isPending}
+          disabled={!user || !content.trim() || postComment.isPending}
           className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40 dark:bg-zinc-200 dark:text-zinc-900"
         >
           {postComment.isPending ? "Posting…" : "Post comment"}

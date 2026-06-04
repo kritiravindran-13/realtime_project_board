@@ -55,7 +55,7 @@ async function resolveAuthorsDisplayNamesToUserIds(
   const uniqueNames = Array.from(new Set(names));
   const userIds: string[] = [];
   for (const name of uniqueNames) {
-    const existing = await prisma.user.findFirst({ where: { author: name } });
+    const existing = await prisma.user.findUnique({ where: { author: name } });
     const user =
       existing ??
       (await prisma.user.create({

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { useProjectTasks } from "@/hooks/use-project-tasks";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
+import { AuthPanel } from "./auth-panel";
 import { fetchProjects, ProjectList } from "./project-list";
 import { TaskBoard } from "./task-board";
 import { TaskDetailsPanel } from "./task-details-panel";
@@ -312,12 +313,15 @@ export function ProjectTasksBoard() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-7xl flex-col gap-8 px-4 py-10 font-sans text-zinc-900 dark:text-zinc-100">
-      <header className="flex flex-col gap-2 border-b border-zinc-200 pb-6 dark:border-zinc-800">
-        <h1 className="text-2xl font-semibold tracking-tight">Project tasks</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Kanban board with drag-and-drop status changes, realtime task list, and a detail panel for
-          dependencies and comments.
-        </p>
+      <header className="flex flex-col gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Project tasks</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Kanban board with drag-and-drop status changes, realtime task list, and a detail panel for
+            dependencies and comments.
+          </p>
+        </div>
+        <AuthPanel />
       </header>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(280px,360px)]">

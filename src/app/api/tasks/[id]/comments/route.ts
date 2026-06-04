@@ -71,7 +71,7 @@ export async function POST(
       body.author.trim().length > 0
     ) {
       const name = body.author.trim();
-      const existing = await prisma.user.findFirst({ where: { author: name } });
+      const existing = await prisma.user.findUnique({ where: { author: name } });
       const user =
         existing ??
         (await prisma.user.create({
