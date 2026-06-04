@@ -1,3 +1,4 @@
+import { requireSessionUser } from "../../../../../../../lib/server/auth";
 import { publishCommentEvent } from "../../../../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../../../../lib/server/prisma";
 
@@ -7,6 +8,9 @@ export async function DELETE(
     params,
   }: { params: Promise<{ id: string; commentId: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id: taskId, commentId } = await params;
 

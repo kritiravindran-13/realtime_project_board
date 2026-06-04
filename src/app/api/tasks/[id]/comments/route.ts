@@ -1,3 +1,4 @@
+import { requireSessionUser } from "../../../../../../lib/server/auth";
 import { publishCommentEvent } from "../../../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../../../lib/server/prisma";
 
@@ -12,6 +13,9 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id } = await params;
 
@@ -45,6 +49,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id } = await params;
     const body = (await request.json()) as AddCommentBody;

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { useProjectTasks } from "@/hooks/use-project-tasks";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import { AuthPanel } from "./auth-panel";
@@ -231,9 +232,11 @@ function statusLabel(s: string) {
 
 export function ProjectTasksBoard() {
   const queryClient = useQueryClient();
+  const { user, isLoading: authLoading } = useAuth();
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjects,
+    enabled: Boolean(user),
   });
 
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -324,6 +327,13 @@ export function ProjectTasksBoard() {
         <AuthPanel />
       </header>
 
+      {authLoading ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : !user ? (
+        <p className="rounded-xl border border-dashed border-zinc-300 bg-white/60 px-6 py-10 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-400">
+          Sign in or create an account above to view and manage projects.
+        </p>
+      ) : (
       <div className="grid gap-8 lg:grid-cols-[minmax(200px,240px)_1fr_minmax(280px,360px)]">
         <aside className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -335,6 +345,7 @@ export function ProjectTasksBoard() {
                 selectedId={activeProjectId}
                 onSelect={handleSelectProject}
                 className="max-w-none"
+                enabled={Boolean(user)}
               />
             </div>
             <button
@@ -434,6 +445,7 @@ export function ProjectTasksBoard() {
           />
         </aside>
       </div>
+      )}
     </div>
   );
 }

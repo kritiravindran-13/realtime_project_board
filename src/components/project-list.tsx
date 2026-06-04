@@ -16,15 +16,22 @@ type ProjectListProps = {
   selectedId: string | null;
   onSelect: (projectId: string) => void;
   className?: string;
+  enabled?: boolean;
 };
 
 /**
  * Loads projects from `GET /api/projects` and renders a dropdown to pick one.
  */
-function ProjectListImpl({ selectedId, onSelect, className = "" }: ProjectListProps) {
+function ProjectListImpl({
+  selectedId,
+  onSelect,
+  className = "",
+  enabled = true,
+}: ProjectListProps) {
   const { data, isPending, isError, error } = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjects,
+    enabled,
   });
 
   const selectClass =

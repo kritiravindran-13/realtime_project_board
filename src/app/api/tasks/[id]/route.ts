@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import { requireSessionUser } from "../../../../../lib/server/auth";
 import { mapTaskForApi } from "../../../../../lib/server/map-task-api";
 import { publishTaskEvent } from "../../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../../lib/server/prisma";
@@ -70,6 +71,9 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id } = await params;
     const task = await prisma.task.findUnique({
@@ -95,6 +99,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id } = await params;
     const body = (await request.json()) as UpdateTaskBody;
@@ -203,6 +210,9 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id } = await params;
 

@@ -1,3 +1,4 @@
+import { requireSessionUser } from "../../../../../../lib/server/auth";
 import { publishTaskEvent } from "../../../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../../../lib/server/prisma";
 
@@ -11,6 +12,9 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const { id } = await params;
     const body = (await request.json()) as ChangeStatusBody;

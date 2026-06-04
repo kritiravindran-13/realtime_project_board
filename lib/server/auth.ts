@@ -1,19 +1,25 @@
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
-import type { AuthUser } from "../shared/auth-user";
+import {
+  isValidUsernameFormat,
+  normalizeUsername,
+  type AuthUser,
+} from "../shared/auth-user";
 
 export const SESSION_COOKIE = "session_user_id";
 
-const USERNAME_MIN = 2;
-const USERNAME_MAX = 32;
-const USERNAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
-
 export function parseUsername(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const username = raw.trim();
-  if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) return null;
-  if (!USERNAME_PATTERN.test(username)) return null;
-  return username;
+  const username = normalizeUsername(raw);
+  return isValidUsernameFormat(username) ? username : null;
+}
+
+export async function requireSessionUser(): Promise<AuthUser | Response> {
+  const user = await getSessionUser();
+  if (!user) {
+    return Response.json({ error: "Sign in required." }, { status: 401 });
+  }
+  return user;
 }
 
 export function mapUserForAuth(user: { id: string; author: string }): AuthUser {

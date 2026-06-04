@@ -1,3 +1,4 @@
+import { requireSessionUser } from "../../../../lib/server/auth";
 import { publishProjectEvent } from "../../../../lib/server/realtime-publish";
 import { prisma } from "../../../../lib/server/prisma";
 import { Prisma } from "@/generated/prisma/client";
@@ -9,6 +10,9 @@ type CreateProjectBody = {
 };
 
 export async function GET() {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const projects = await prisma.project.findMany({
       orderBy: { name: "asc" },
@@ -25,6 +29,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const body = (await request.json()) as CreateProjectBody;
 

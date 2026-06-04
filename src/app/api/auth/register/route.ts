@@ -21,6 +21,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const taken = await prisma.user.findUnique({
+      where: { author: username },
+      select: { id: true },
+    });
+    if (taken) {
+      return Response.json(
+        { error: "That username is already taken." },
+        { status: 409 },
+      );
+    }
+
     const user = await prisma.user.create({
       data: { author: username },
       select: { id: true, author: true },

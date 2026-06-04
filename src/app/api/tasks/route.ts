@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { ApiTask } from "../../../../lib/shared/api-task";
+import { requireSessionUser } from "../../../../lib/server/auth";
 import { mapTaskForApi, mapTasksForApi } from "../../../../lib/server/map-task-api";
 import {
   getHotTasksCached,
@@ -62,6 +63,9 @@ async function resolveAuthorsDisplayNamesToUserIds(names: string[]): Promise<str
 }
 
 export async function GET(request: Request) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const url = new URL(request.url);
     const projectId = url.searchParams.get("projectId");
@@ -97,6 +101,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const session = await requireSessionUser();
+  if (session instanceof Response) return session;
+
   try {
     const body = (await request.json()) as CreateTaskBody;
 

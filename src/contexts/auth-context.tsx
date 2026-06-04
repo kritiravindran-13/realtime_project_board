@@ -92,6 +92,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["auth", "me"], null);
+      queryClient.removeQueries({ queryKey: ["projects"] });
+      queryClient.removeQueries({ queryKey: ["tasks"] });
+      queryClient.removeQueries({ queryKey: ["comments"] });
     },
   });
 
